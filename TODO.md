@@ -1,0 +1,7 @@
+- [ ] Implement the different filter to apply for creating the transfer function (differentiation, low-pass, high-pass, band-pass, band-stop) and check their impact on the pileup filter.
+- [ ] Interpolation of the filtered pulses before taking the maximum.
+- [ ] Alignment of the pulses before filtering.
+- [ ] Estimator of the performance vs baseline noise level and pulse shape.
+- [ ] Check why the data fit best with ratio_distribution_mean=0.9 and not the true value (0.688) for compute_J.
+- [ ] Tune the simulation (very simple version implemented now).
+- [ ] Check the validity range of the approximation made in compute_J.
