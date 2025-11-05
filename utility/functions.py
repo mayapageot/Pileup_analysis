@@ -1,6 +1,3 @@
-import numpy as np
-import torch
-
 def calculate_BI(rej_power: float, dt: float) -> float:
     """
     Calculate the background interference (BI) using given parameters.

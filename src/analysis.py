@@ -58,7 +58,7 @@ def compute_sigmas(S2_over_bslspec, f1, f2, signal_amp):
     return torch.sqrt(varZ.real) * 2
 
 
-def compute_J(f1, f2, phase, S_H, S2_over_bslspec, signal_amp, N_sigma=1.28):
+def compute_J(f1, f2, phase, S_H, S2_over_bslspec, signal_amp, N_sigma=1.28, ratio_distribtion_mean=0.9, ratio_distribtion_var=0.03689):
     """
     Computes the J metric for the given inputs.
 
@@ -70,6 +70,8 @@ def compute_J(f1, f2, phase, S_H, S2_over_bslspec, signal_amp, N_sigma=1.28):
         S2_over_bslspec (torch.Tensor): Normalized spectrum tensor.
         signal_amp (float): Signal amplitude.
         N_sigma (float, optional): Sigma threshold. Defaults to 1.28.
+        ratio_distribtion_mean (float, optional): Mean of the ratio distribution. Defaults to 0.9. (Not real, adjusted on data)
+        ratio_distribtion_var (float, optional): Variance of the ratio distribution. Defaults to 0.03689.
 
     Returns:
         torch.Tensor: Computed J metric.
@@ -78,8 +80,8 @@ def compute_J(f1, f2, phase, S_H, S2_over_bslspec, signal_amp, N_sigma=1.28):
     amp2 = torch.mean(S_H * f2 * phase, dim=1).real
     F = amp1 / amp2
     sigma = compute_sigmas(S2_over_bslspec, f1, f2, signal_amp)
-    true_mu = (1 - F) * 0.9
-    true_sigma = torch.sqrt(sigma ** 2 + true_mu ** 2 * 0.03689)
+    true_mu = (1 - F) * ratio_distribtion_mean
+    true_sigma = torch.sqrt(sigma ** 2 + true_mu ** 2 * ratio_distribtion_var)
     true_J = 1 - norm.cdf(true_mu / true_sigma - N_sigma)
     return torch.sum(true_J) / true_mu.shape[0]
 
