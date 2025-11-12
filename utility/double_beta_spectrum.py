@@ -5,6 +5,7 @@ from scipy import integrate, interpolate
 # Total available decay energy (MeV)
 L = 3.034
 
+
 def energy_polynomial(E):
     """Polynomial part of the double beta decay energy spectrum."""
     return E**4 + 10*E**3 + 40*E**2 + 60*E + 30
@@ -43,11 +44,11 @@ def unnormalized_ratio_pdf(ratio):
 
     Context
     -------
-    - E1, E2: energies of two emitted electrons in double beta decay.
-    - g(E) = E * (L - E)^5 * P(E) is the (unnormalized) single-electron
+    - E1, E2: energies of two event in double beta decay.
+    - g(E) = E * (L - E)^5 * P(E) is the (unnormalized) single-event
       energy spectrum.
     - R = E1 / E2 describes how asymmetrically the total decay energy L
-      is shared between the two electrons.
+      is shared between the two event.
 
     Parameters
     ----------
@@ -79,7 +80,7 @@ def unnormalized_ratio_pdf(ratio):
 def build_ratio_distribution():
     """
     Constructs callable normalized PDF, CDF, and inverse CDF for the
-    ratio R = E1 / E2 directly from the continuous definition.
+    ratio R = E1 / (E1 + E2) directly from the continuous definition.
 
     Uses numerical integration to normalize and to define the CDF.
 
@@ -93,6 +94,39 @@ def build_ratio_distribution():
         Callable inverse CDF, inverse_cdf(u), with u ∈ [0, 1].
     """
     # Compute normalization constant by integrating over (0,1)
+    def unnormalized_ratio_pdf(r):
+        """
+        Unnormalized probability density for the energy ratio R = E1 / (E1 + E2),
+        given that E1 + E2 = L.
+
+        Parameters
+        ----------
+        r : array_like
+            Ratio values (0 < r < 1).
+
+        Returns
+        -------
+        pdf : ndarray
+            Unnormalized PDF values for R.
+        """
+        r = np.asarray(r)
+        pdf = np.zeros_like(r)
+        valid = (r > 0) & (r < 1)
+
+        if np.any(valid):
+            r_valid = r[valid]
+            E1 = r_valid * L
+            E2 = (1 - r_valid) * L
+            pdf[valid] = (
+                (L**13)
+                * (r_valid**6)
+                * ((1 - r_valid)**6)
+                * energy_polynomial(E1)
+                * energy_polynomial(E2)
+            )
+
+        return pdf
+
     norm, _ = integrate.quad(lambda r: unnormalized_ratio_pdf(r), 0, 1)
 
     # Normalized PDF
@@ -109,7 +143,6 @@ def build_ratio_distribution():
         return result
 
     # Build inverse CDF by interpolating CDF samples
-    # (kept continuous by sampling many points)
     r_grid = np.linspace(0, 1, 2000)
     cdf_grid = np.array([cdf(r) for r in r_grid])
     inverse_cdf_fn = interpolate.interp1d(
@@ -126,16 +159,24 @@ def build_ratio_distribution():
 
     return pdf, cdf, inverse_cdf
 
+
 pdf_ratio2b, cdf_ratio2b, inverse_cdf_ratio2b = build_ratio_distribution()
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
-    n_samples = 10000
-    samples = inverse_cdf_ratio2b(np.random.rand(n_samples))
-    plt.hist(samples, bins = 100, density = True, alpha = 0.5, label = "Samples")
+    # n_samples = 10000
+    # samples = inverse_cdf_ratio2b(np.random.rand(n_samples))
+    # plt.hist(samples, bins = 100, density = True, alpha = 0.5, label = "Samples")
     z_grid = np.linspace(0, 1, 1000)
-    plt.plot(z_grid, pdf(z_grid)/np.trapz(pdf(z_grid), z_grid), 'r-', label="Theoretical PDF")
-    plt.xlabel("Z = X1/X2")
+    plt.plot(z_grid, pdf_ratio2b(z_grid)/np.trapz(pdf_ratio2b(z_grid), z_grid), 'r-', label="PDF")
+    plt.xlabel("ratio r")
     plt.ylabel("Density")
     plt.legend()
     plt.show()
+    # E = np.linspace(0, L, 1000)
+    # plt.plot(E, g(E)/np.trapz(g(E), E))
+    # plt.xlabel("Energy E (MeV)")
+    # plt.ylabel("Normalized Spectrum")
+    # plt.show()
+
+
