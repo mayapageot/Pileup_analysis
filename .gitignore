@@ -101,10 +101,8 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
-#idea
+# PyCharm / JetBrains IDE settings
 .idea/
-!.idea/codeStyles/
-!.idea/runConfigurations/
 
 # Environments
 .env
