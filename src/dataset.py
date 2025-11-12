@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 main_dir = os.getenv("DATA_PATH")
 
+
 class BinaryDataset(Dataset):
     def __init__(self, file_path, win_length, positions, win_shift=0, dtype=np.uint32):
         """
@@ -72,7 +73,7 @@ class BinaryDataset(Dataset):
         return data
 
 
-def create_data_sets(channel, win_length=2000, shift=0, pos_prefix="_bis", file_sufixe="", differenciate=True):
+def create_data_sets(channel, win_length=2000, shift=0, pos_prefix="_bis", file_suffix= "", differenciate=True):
     """
     Creates datasets for single and pileup data, along with additional processed information.
 
@@ -81,7 +82,7 @@ def create_data_sets(channel, win_length=2000, shift=0, pos_prefix="_bis", file_
         win_length (int, optional): Length of each data window. Defaults to 2000.
         shift (int, optional): Shift applied to window start positions. Defaults to 0.
         pos_prefix (str, optional): Prefix for position files. Defaults to "_bis".
-        file_sufixe (str, optional): Suffix for binary files. Defaults to "".
+        file_suffix (str, optional): Suffix for binary files. Defaults to "".
         differenciate (bool, optional): Whether to use differentiated data paths. Defaults to True.
 
     Returns:
@@ -90,7 +91,7 @@ def create_data_sets(channel, win_length=2000, shift=0, pos_prefix="_bis", file_
             - data_pileup (BinaryDataset): Dataset for pileup data.
             - dt_pileup (numpy.ndarray): Time differences for pileup data.
             - fracE_pileup (numpy.ndarray): Fractional energy for pileup data.
-            - E_pileups (numpy.ndarray): Energy values for pileup data.
+            - e_pileups (numpy.ndarray): Energy values for pileup data.
     """
     partial = 0
     dataset_pileup_name = "pup_n1-d8_000813_20230628T161508"
@@ -99,23 +100,25 @@ def create_data_sets(channel, win_length=2000, shift=0, pos_prefix="_bis", file_
     # Construct file paths for pileup data
     base_path = f"/channel{channel}/"
     dif_path = "dif/" if differenciate else ""
-    file_path_pileup = f"{main_dir}{base_path}{dif_path}{dataset_pileup_name}_{channel:03}_{partial:03}_dif.bin{file_sufixe}"
+    file_path_pileup = (f"{main_dir}{base_path}{dif_path}{dataset_pileup_name}_{channel:03}_{partial:03}_dif.bin"
+                        f"{file_suffix}")
     path_pos_pileup = f"{main_dir}{base_path}{dataset_pileup_name}_{channel:03}_{partial:03}{pos_prefix}.pos"
 
     # Load pileup positions and process
     pos_file_pileup = np.loadtxt(path_pos_pileup)[:15000]
     dt_pileup = pos_file_pileup[:, -1]
-    fracE_pileup = pos_file_pileup[:, 2] / pos_file_pileup[:, 1]
-    E_pileups = pos_file_pileup[:, 1:3]
-    dt_pileup[fracE_pileup > 1] = -dt_pileup[fracE_pileup > 1]
-    fracE_pileup[fracE_pileup > 1] = 1 / fracE_pileup[fracE_pileup > 1]
+    r_pileup = pos_file_pileup[:, 2]/(pos_file_pileup[:, 2] + pos_file_pileup[:, 1])
+    e_pileups = pos_file_pileup[:, 1:3]
+    # dt_pileup[r_pileup > 1] = -dt_pileup[fracE_pileup > 1]
+    # fracE_pileup[fracE_pileup > 1] = 1 / fracE_pileup[fracE_pileup > 1]
     positions_pileup = (pos_file_pileup[:, 0] // 4).astype(int)
 
     # Create BinaryDataset for pileup data
     data_pileup = BinaryDataset(file_path_pileup, win_length, positions_pileup, win_shift=win_length // 2 - shift)
 
     # Construct file paths for single data
-    file_path_single = f"{main_dir}{base_path}{dif_path}{dataset_single_name}_{channel:03}_{partial:03}_dif.bin{file_sufixe}"
+    file_path_single = (f"{main_dir}{base_path}{dif_path}{dataset_single_name}_{channel:03}_{partial:03}_dif.bin"
+                        f"{file_suffix}")
     path_pos_single = f"{main_dir}{base_path}{dataset_single_name}_{channel:03}_{partial:03}{pos_prefix}.pos"
 
     # Load single positions and create BinaryDataset
@@ -123,25 +126,26 @@ def create_data_sets(channel, win_length=2000, shift=0, pos_prefix="_bis", file_
     positions_single = (pos_file_single[:, 0] // 4).astype(int)
     data_single = BinaryDataset(file_path_single, win_length, positions_single, win_shift=win_length // 2 - shift)
 
-    return data_single, data_pileup, dt_pileup, fracE_pileup, E_pileups
+    return data_single, data_pileup, dt_pileup, r_pileup, e_pileups
 
-def get_channel_specs(channel, N_deriv=1):
+
+def get_channel_specs(channel, n_deriv=1):
     """
     Loads and processes filter data for a given channel.
 
     Args:
         channel (int): Channel number to process.
-        N_deriv (int, optional): Number of derivatives to compute. Defaults to 1.
+        n_deriv (int, optional): Number of derivatives to compute. Defaults to 1.
 
     Returns:
         tuple: A tuple containing:
             - H_unit (numpy.ndarray): Normalized filter response.
             - S (numpy.ndarray): Fourier transform of the differentiated mean pulse.
-            - bslspec (numpy.ndarray): Baseline spectrum.
+            - nps (numpy.ndarray): Baseline spectrum.
             - w (numpy.ndarray): frequency array.
     """
     # Load baseline spectrum
-    bslspec = np.fromfile(f"{main_dir}/channel{channel}/dif/raw_noise_d{N_deriv}.bin_spec.bin")
+    nps = np.fromfile(f"{main_dir}/channel{channel}/dif/raw_noise_d{n_deriv}.bin_spec.bin")
     # Load mean pulse, trying two possible file paths
     try:
         meanpulse = np.fromfile(f"{main_dir}/injected_pulses/000813_20230628T161508_{channel:03}_000.bin_edmean.bin")
@@ -149,9 +153,9 @@ def get_channel_specs(channel, N_deriv=1):
         meanpulse = np.fromfile(f"{main_dir}/injected_pulses/000813_20230628T161508_{channel:03}_001.bin_edmean.bin")
 
     # Compute the N-th derivative of the mean pulse
-    dmeanpulse = np.diff(meanpulse, n=N_deriv, prepend=[0] * N_deriv)
-    size = len(bslspec)
-    dmeanpulse = dmeanpulse[np.argmax(dmeanpulse)-size//2 : np.argmax(dmeanpulse)+size//2]
+    dmeanpulse = np.diff(meanpulse, n=n_deriv, prepend= [0] * n_deriv)
+    size = len(nps)
+    dmeanpulse = dmeanpulse[np.argmax(dmeanpulse)-size//2: np.argmax(dmeanpulse)+size//2]
     if len(dmeanpulse) < size:
         dmeanpulse = np.pad(dmeanpulse, (0, size - len(dmeanpulse)), 'constant')
     dmeanpulse /= np.max(np.abs(dmeanpulse))
@@ -161,7 +165,7 @@ def get_channel_specs(channel, N_deriv=1):
     w = 2 * np.pi * freq
 
     # Compute filter response and normalize it
-    H = np.conj(S) / bslspec
+    H = np.conj(S) / nps
     H_unit = H / np.mean(np.abs(H * S))
 
-    return H_unit, S, bslspec, w
+    return H_unit, S, nps, w
