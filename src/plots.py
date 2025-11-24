@@ -216,6 +216,75 @@ def plot_3d():
     plt.colorbar(label='Mean PSD_double_sel')
     plt.show()
 
+def J_vs_rp():
+    import pandas as pd
+    out_data = pd.read_csv('../outputs/BI_results_interp_v2.csv')
+    plt.scatter(out_data['J'], 1 - out_data['rp'], c = out_data['channel_ID'], cmap = 'tab10')
+    plt.plot([0.08, 0.4], [0.08, 0.4], 'k--')
+    plt.xlabel('J')
+    plt.ylabel('1 - $r_p$')
+    plt.show()
+
+
+def plot_Trial_vs_J():
+    fig, ax = plt.subplots()
+    for channel in [3, 5, 9, 11, 13, 15, 17, 19]:
+        J_values = np.load(f"../outputs/training_Js/channel_{channel}/J_90_V2.npy")
+        ax.plot(J_values, c = "k", alpha = 0.3)
+    ax.set_xlabel('Trials', fontsize = 16)
+    ax.set_ylabel('J', fontsize = 16)
+    ax.set_title('Trials vs J', fontsize = 18)
+
+    # Make tick labels bigger
+    ax.tick_params(axis = 'both', which = 'major', labelsize = 14)
+    # Make the legend bigger
+    ax.legend(fontsize = 14)
+    fig.set_size_inches(8, 6)
+    fig.savefig("../outputs/plots/J_convergence_all_channels_eff90.pdf", dpi = 300)
+
+def plot_all_channel_m1_2():
+    channels = [3, 5, 9, 11, 13, 15, 17, 19]
+
+    f1_all, f2_all = [], []
+
+    fig, ax = plt.subplots(figsize = (8, 6))
+
+    for ch in channels:
+        f1, f2 = np.load(f"../outputs/Pileup_filter_functions/channel_{ch}/functions_eff90_V2.npy")
+        f1_all.append(np.abs(f1))
+        f2_all.append(np.abs(f2))
+
+        freq = np.fft.fftfreq(len(f1), d = 1e-4)
+        ax.plot(freq[:1000], f1[:1000], alpha = 0.1, color = "k")
+        ax.plot(freq[:1000], f2[:1000], alpha = 0.1, color = "k")
+
+    # Convert to arrays
+    f1_all = np.array(f1_all)
+    f2_all = np.array(f2_all)
+
+    # Median values
+    f1_med = np.median(f1_all, axis = 0)
+    f2_med = np.median(f2_all, axis = 0)
+
+    # Positive frequencies only
+    pos_freq = freq > 0
+
+    ax.plot(freq[pos_freq], f1_med[pos_freq],
+            color = "red", linewidth = 2, label = "Median $m_1$")
+    ax.plot(freq[pos_freq], f2_med[pos_freq],
+            color = "blue", linewidth = 2, label = "Median $m_2$")
+
+    # Axis styling
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Frequency [Hz]", fontsize = 16)
+    ax.set_ylabel("Gain", fontsize = 16)
+    ax.set_title("Frequency vs $m_{1,opt}$ & $m_{2,opt}$", fontsize = 18)
+    ax.tick_params(axis = "both", which = "major", labelsize = 14)
+    ax.legend(fontsize = 14)
+
+    fig.tight_layout()
+    # fig.savefig("../outputs/plots/Median_filters_channel_all_eff90.pdf", dpi=300)
 
 if __name__ == "__main__":
-    plot_compted_mu_sigma()
+    J_vs_rp()
