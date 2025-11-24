@@ -1,7 +1,10 @@
 import numpy as np
 from torch.utils.data import Dataset
 import os
+import glob
 from dotenv import load_dotenv
+import ast
+
 load_dotenv()
 main_dir = os.getenv("DATA_PATH")
 
@@ -72,8 +75,23 @@ class BinaryDataset(Dataset):
 
         return data
 
+def find_file(target,specific_subdir=""):
+    file_path = glob.glob(os.path.join(main_dir, specific_subdir,"**", target), recursive = True)[0]
+    return file_path
 
-def create_data_sets(channel, win_length=2000, shift=0, pos_prefix="_bis", file_suffix= "", differenciate=True):
+
+def find_files(dataset_name, channel, pos_prefix="_bis", differenciate=True,file_suffix="",specific_subdir=""):
+    modif = "_dif" if differenciate else ""
+    target = dataset_name + f"_{channel:03}_???{modif}.bin{file_suffix}"
+    file_path = find_file(target, specific_subdir)
+    target_pos = dataset_name + f"_{channel:03}_???{pos_prefix}.pos"
+    path_pos = find_file(target_pos, specific_subdir)
+    return file_path,path_pos
+
+
+
+def create_data_sets(channel, win_length=2000, shift=0, pos_prefix="_bis", file_suffix= "", differenciate=False,
+                     specific_subdir="RUN9_pulse_injected_new/"):
     """
     Creates datasets for single and pileup data, along with additional processed information.
 
@@ -93,34 +111,26 @@ def create_data_sets(channel, win_length=2000, shift=0, pos_prefix="_bis", file_
             - fracE_pileup (numpy.ndarray): Fractional energy for pileup data.
             - e_pileups (numpy.ndarray): Energy values for pileup data.
     """
-    partial = 0
     dataset_pileup_name = "pup_n1-d8_000813_20230628T161508"
-    dataset_single_name = "pup_n1-d0_000813_20230628T161508"
-
-    # Construct file paths for pileup data
-    base_path = f"/channel{channel}/"
-    dif_path = "dif/" if differenciate else ""
-    file_path_pileup = (f"{main_dir}{base_path}{dif_path}{dataset_pileup_name}_{channel:03}_{partial:03}_dif.bin"
-                        f"{file_suffix}")
-    path_pos_pileup = f"{main_dir}{base_path}{dataset_pileup_name}_{channel:03}_{partial:03}{pos_prefix}.pos"
-
+    file_path_pileup,path_pos_pileup = find_files(dataset_pileup_name, channel,
+                                                  pos_prefix = pos_prefix, differenciate = differenciate,
+                                                  file_suffix=file_suffix,
+                                                  specific_subdir=specific_subdir)
     # Load pileup positions and process
     pos_file_pileup = np.loadtxt(path_pos_pileup)[:15000]
     dt_pileup = pos_file_pileup[:, -1]
     r_pileup = pos_file_pileup[:, 2]/(pos_file_pileup[:, 2] + pos_file_pileup[:, 1])
     e_pileups = pos_file_pileup[:, 1:3]
-    # dt_pileup[r_pileup > 1] = -dt_pileup[fracE_pileup > 1]
-    # fracE_pileup[fracE_pileup > 1] = 1 / fracE_pileup[fracE_pileup > 1]
     positions_pileup = (pos_file_pileup[:, 0] // 4).astype(int)
 
     # Create BinaryDataset for pileup data
     data_pileup = BinaryDataset(file_path_pileup, win_length, positions_pileup, win_shift=win_length // 2 - shift)
 
-    # Construct file paths for single data
-    file_path_single = (f"{main_dir}{base_path}{dif_path}{dataset_single_name}_{channel:03}_{partial:03}_dif.bin"
-                        f"{file_suffix}")
-    path_pos_single = f"{main_dir}{base_path}{dataset_single_name}_{channel:03}_{partial:03}{pos_prefix}.pos"
-
+    dataset_single_name = "pup_n1-d0_000813_20230628T161508"
+    file_path_single, path_pos_single = find_files(dataset_single_name, channel,
+                                                  pos_prefix = pos_prefix, differenciate = differenciate,
+                                                  file_suffix=file_suffix,
+                                                  specific_subdir=specific_subdir)
     # Load single positions and create BinaryDataset
     pos_file_single = np.loadtxt(path_pos_single)[:15000]
     positions_single = (pos_file_single[:, 0] // 4).astype(int)
@@ -129,7 +139,7 @@ def create_data_sets(channel, win_length=2000, shift=0, pos_prefix="_bis", file_
     return data_single, data_pileup, dt_pileup, r_pileup, e_pileups
 
 
-def get_channel_specs(channel, n_deriv=1):
+def get_channel_specs(channel, n_deriv=1, window_fct=np.ones):
     """
     Loads and processes filter data for a given channel.
 
@@ -145,27 +155,57 @@ def get_channel_specs(channel, n_deriv=1):
             - w (numpy.ndarray): frequency array.
     """
     # Load baseline spectrum
-    nps = np.fromfile(f"{main_dir}/channel{channel}/dif/raw_noise_d{n_deriv}.bin_spec.bin")
-    # Load mean pulse, trying two possible file paths
-    try:
-        meanpulse = np.fromfile(f"{main_dir}/injected_pulses/000813_20230628T161508_{channel:03}_000.bin_edmean.bin")
-    except FileNotFoundError:
-        meanpulse = np.fromfile(f"{main_dir}/injected_pulses/000813_20230628T161508_{channel:03}_001.bin_edmean.bin")
-
+    meas_name = "000813_20230628T161508"
+    nps = np.fromfile(find_file(f"raw_noise_d{n_deriv}.bin_spec.bin",
+                                       specific_subdir = f"RUN9_pulse_injected_new/channel{channel}"))
+    meanpulse = np.fromfile(find_file(f"{meas_name}_{channel:03}_???.bin_edmean.bin",
+                                       specific_subdir = "RUN9_pulse_injected_new/"))
+    meanpulse /= np.max(np.abs(meanpulse))
     # Compute the N-th derivative of the mean pulse
     dmeanpulse = np.diff(meanpulse, n=n_deriv, prepend= [0] * n_deriv)
+    pulse_factor = np.max(np.abs(dmeanpulse))
     size = len(nps)
     dmeanpulse = dmeanpulse[np.argmax(dmeanpulse)-size//2: np.argmax(dmeanpulse)+size//2]
     if len(dmeanpulse) < size:
         dmeanpulse = np.pad(dmeanpulse, (0, size - len(dmeanpulse)), 'constant')
     dmeanpulse /= np.max(np.abs(dmeanpulse))
     # Perform Fourier transform and compute angular frequency
-    S = np.fft.fft(dmeanpulse)
-    freq = np.fft.fftfreq(len(S), 1e-4)
+    S = np.fft.fft(dmeanpulse*window_fct(size))
+    freq = np.fft.fftfreq(size, 1e-4)
     w = 2 * np.pi * freq
 
     # Compute filter response and normalize it
     H = np.conj(S) / nps
     H_unit = H / np.mean(np.abs(H * S))
 
-    return H_unit, S, nps, w
+    return H_unit, S, nps, w, pulse_factor
+
+
+def load_params_simu(filename):
+    params = {}
+    with open(filename, "r") as f:
+        for line in f:
+            # Remove inline comments
+            line = line.split("#", 1)[0].strip()
+            # Skip empty lines
+            if not line:
+                continue
+            # Parse key=value
+            if "=" in line:
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().rstrip(";")
+                # Try to parse Python literal
+                try:
+                    parsed_value = ast.literal_eval(value)
+                except:
+                    parsed_value = value  # leave as string
+
+                params[key] = parsed_value
+
+    return params
+
+def get_amp_Q_val(channel):
+    target = f"000813_20230628T161508_{channel:03}_???-pup_single.injconf"
+    params = load_params_simu(find_file(target, specific_subdir = "RUN9_pulse_injected_new/"))
+    return params["LY_close"] * 3.034 * params["ampl_Tl"] / 2.614511 / params["LY_far"] * params["area_factor"]
