@@ -1,7 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import binned_statistic
-def plot_psd_vs_dt(PSD_single, PSD_pileup, dt_pileup, cut=0.9, bins=40):
+from matplotlib.ticker import LogLocator
+def plot_psd_vs_dt(PSD_single, PSD_pileup, dt_pileup, cut=0.9, bins=40,PSD_min=-0.01,PSD_max =0.02):
     """
     Plot the Pulse Shape Discriminator (PSD) as a function of time difference (dt).
 
@@ -19,54 +20,54 @@ def plot_psd_vs_dt(PSD_single, PSD_pileup, dt_pileup, cut=0.9, bins=40):
     Returns:
         tuple: A tuple containing the figure, main axis, and inset axis objects.
     """
-    dt_pileup_sel = dt_pileup[np.abs(PSD_pileup - 1) < 0.02]
-    PSD_double_sel = PSD_pileup[np.abs(PSD_pileup - 1) < 0.02]
-
+    dt_pileup_sel = dt_pileup[np.abs(PSD_pileup - 1) < 0.05]
+    PSD_double_sel = PSD_pileup[np.abs(PSD_pileup - 1) < 0.05]
     bin_means, _, _ = binned_statistic(
-        dt_pileup_sel * 1e-1, PSD_double_sel, np.mean, bins
+        dt_pileup_sel * 1e-1, 1-PSD_double_sel, np.mean, bins
     )
-    bin_std, bin_edges, binnumber = binned_statistic(
-        dt_pileup_sel * 1e-1, PSD_double_sel, np.std, bins
+    bin_high, bin_edges, binnumber = binned_statistic(
+        dt_pileup_sel * 1e-1, 1-PSD_double_sel, lambda x: np.percentile(x, 84.1), bins
+    )
+    bin_low, bin_edges, binnumber = binned_statistic(
+        dt_pileup_sel * 1e-1, 1-PSD_double_sel, lambda x:np.percentile(x,15.9), bins
     )
 
     fig, ax = plt.subplots(figsize=(5, 5))
-    ax.hlines(cut, 0, 0.8, colors="#fc342a", label="90% acceptance cut")
+    ax.hlines(1-cut, 0, 0.8, colors="#fc342a", label="90% acceptance cut")
     ax.errorbar(
         bin_edges[:-1],
         bin_means,
-        yerr=bin_std,
-        fmt="o",
-        label="Pile-up Simulated Pulses",
-        color="#2d508c",
+        yerr = [bin_means - bin_low, bin_high - bin_means],
+        fmt = "o",
+        label = "Pile-up Simulated Pulses",
+        color = "#2d508c",
     )
-    ax.set_xlim(0, 0.8)
+    ax.set_xlim(-0.01, 0.8)
     ax.set_xlabel("dt (ms)")
-    ax.set_ylabel("PSD")
-
+    ax.set_ylabel("1-PSD")
     ax2 = ax.inset_axes([1.0, 0, 1, 1], sharey=ax)
-    ax2.hlines(cut, 0, 300, colors="#fc342a", label="90% acceptance cut")
-    ax2.hist(
-        PSD_single,
+    hist,_,_ = ax2.hist(
+        1-PSD_single,
         bins=100,
-        range=(0.97, 1.006),
-        density=True,
-        alpha=0.7,
+        range=(PSD_min,PSD_max),
+        alpha=0.9,
         label="Single Simulated Pulses",
         color="#ff9200",
         orientation="horizontal",
     )
     ax2.hist(
-        PSD_pileup,
+        1-PSD_pileup,
         bins=100,
-        range=(0.97, 1.006),
-        density=True,
-        alpha=0.7,
+        range=(PSD_min,PSD_max),
+        alpha=0.9,
         label="Pile-up Simulated Pulses",
         color="#2d508c",
         orientation="horizontal",
     )
+
+    ax2.hlines(1-cut, 0, hist.max(), colors="#fc342a", label="90% acceptance cut")
     ax2.tick_params(left=False, labelleft=False)
-    ax2.set_xticks([50, 100, 150, 200, 250, 300])
+    # ax2.set_xticks([50, 100, 150, 200, 250, 300])
     ax2.set_xlabel("Counts")
     ax.set_xticks(np.arange(0, 0.8, 0.1))
     ax2.legend()
@@ -99,8 +100,11 @@ def plot_biais_vs_dt(PSD_single, PSD_pileup, dt_pileup, cut=0.9, bins=40):
     bin_means, bin_edges, binnumber = binned_statistic(
         dt_pileup_sel * 1e-1, Biais, np.mean, bins
     )
-    bin_std, bin_edges, binnumber = binned_statistic(
-        dt_pileup_sel * 1e-1, Biais, np.std, bins
+    bin_high, bin_edges, binnumber = binned_statistic(
+        dt_pileup_sel * 1e-1, Biais, lambda x: np.percentile(x, 84.1), bins
+    )
+    bin_low, bin_edges, binnumber = binned_statistic(
+        dt_pileup_sel * 1e-1, Biais, lambda x: np.percentile(x, 15.9), bins
     )
 
     fig, ax = plt.subplots(figsize=(5, 5))
@@ -108,7 +112,7 @@ def plot_biais_vs_dt(PSD_single, PSD_pileup, dt_pileup, cut=0.9, bins=40):
     ax.errorbar(
         bin_edges[:-1],
         bin_means,
-        yerr=bin_std,
+        yerr=[bin_means - bin_low, bin_high - bin_means],
         fmt="o",
         label="Pile-up Simulated Pulses",
         color="#2d508c",
@@ -118,11 +122,10 @@ def plot_biais_vs_dt(PSD_single, PSD_pileup, dt_pileup, cut=0.9, bins=40):
     ax.set_ylabel("Pileup Bias (1 - PSD)")
 
     ax2 = ax.inset_axes([1.0, 0, 1, 1], sharey=ax)
-    ax2.hlines(cut, 0, 300, colors="#fc342a", label="90% acceptance cut")
-    ax2.hist(
+    hist,_,_ = ax2.hist(
         1 - PSD_single,
         bins=100,
-        range=(-0.002, 0.015),
+        range=(-0.003, 0.015),
         density=True,
         alpha=0.7,
         label="Single Simulated Pulses",
@@ -132,13 +135,14 @@ def plot_biais_vs_dt(PSD_single, PSD_pileup, dt_pileup, cut=0.9, bins=40):
     ax2.hist(
         1 - PSD_pileup,
         bins=100,
-        range=(-0.002, 0.015),
+        range=(-0.003, 0.015),
         density=True,
         alpha=0.7,
         label="Pile-up Simulated Pulses",
         color="#2d508c",
         orientation="horizontal",
     )
+    ax2.hlines(cut, 0, hist.max(), colors="#fc342a", label="90% acceptance cut")
     ax2.tick_params(left=False, labelleft=False)
     ax2.set_xlabel("Counts")
     ax.set_xticks(np.arange(0, 0.8, 0.1))
@@ -242,7 +246,7 @@ def plot_Trial_vs_J():
     fig.set_size_inches(8, 6)
     fig.savefig("../outputs/plots/J_convergence_all_channels_eff90.pdf", dpi = 300)
 
-def plot_all_channel_m1_2():
+def plot_m1_2_all_channel():
     channels = [3, 5, 9, 11, 13, 15, 17, 19]
 
     f1_all, f2_all = [], []
@@ -270,9 +274,9 @@ def plot_all_channel_m1_2():
     pos_freq = freq > 0
 
     ax.plot(freq[pos_freq], f1_med[pos_freq],
-            color = "red", linewidth = 2, label = "Median $m_1$")
+            color = "#2d508c", linewidth = 2, label = "Median $m_1$")
     ax.plot(freq[pos_freq], f2_med[pos_freq],
-            color = "blue", linewidth = 2, label = "Median $m_2$")
+            color = "#fc342a", linewidth = 2, label = "Median $m_2$")
 
     # Axis styling
     ax.set_xscale("log")
@@ -282,9 +286,247 @@ def plot_all_channel_m1_2():
     ax.set_title("Frequency vs $m_{1,opt}$ & $m_{2,opt}$", fontsize = 18)
     ax.tick_params(axis = "both", which = "major", labelsize = 14)
     ax.legend(fontsize = 14)
+    ax.grid(True, which = "both", ls = "--", lw = 0.5)
+    fig.tight_layout()
+    fig.show()
+    fig.savefig("../outputs/plots/Median_filters_channel_all_eff90.pdf", dpi=300)
+
+def plot_m1_2_old_all_channel():
+    import src.dataset as ds
+    channels = [3, 5, 9, 11, 13, 15, 17, 19]
+
+    f1_all, f2_all = [], []
+    f1_all_old, f2_all_old = [], []
+    fig, ax = plt.subplots(figsize = (8, 6))
+
+    for ch in channels:
+        f1, f2 = np.load(f"../outputs/Pileup_filter_functions/channel_{ch}/functions_eff90_V2.npy")
+        f1_all.append(np.abs(f1))
+        f2_all.append(np.abs(f2))
+
+        freq = np.fft.fftfreq(len(f1), d = 1e-4)
+        ax.plot(freq[:1000], f1[:1000], alpha = 0.1, color = "k")
+        ax.plot(freq[:1000], f2[:1000], alpha = 0.1, color = "k")
+        H_unit, S, nps, w, pulse_factor = ds.get_channel_specs(ch, n_deriv = 1, window_fct = np.hanning)
+        f1, f2 = np.ones(2000), np.abs(H_unit * S)
+        f1, f2  = f1 / np.mean(np.abs(S * f1 * H_unit)), f2 / np.mean(np.abs(S * f2 * H_unit))
+        f1_all_old.append(np.abs(f1))
+        f2_all_old.append(np.abs(f2))
+
+        freq = np.fft.fftfreq(len(f1), d = 1e-4)
+        ax.plot(freq[:1000], f1[:1000], alpha = 0.1, color = "k")
+        ax.plot(freq[:1000], f2[:1000], alpha = 0.1, color = "k")
+    f1_all_old = np.array(f1_all_old )
+    f2_all_old = np.array(f2_all_old)
+    f1_med_old = np.median(f1_all_old, axis = 0)
+    f2_med_old = np.median(f2_all_old, axis = 0)
+
+    # Convert to arrays
+    f1_all = np.array(f1_all)
+    f2_all = np.array(f2_all)
+
+    # Median values
+    f1_med = np.median(f1_all, axis = 0)
+    f2_med = np.median(f2_all, axis = 0)
+
+    # Positive frequencies only
+    pos_freq = freq > 0
+
+    ax.plot(freq[pos_freq], f1_med[pos_freq],
+            color = "#2d508c", linewidth = 2, label = "Median $m_1$")
+    ax.plot(freq[pos_freq], f2_med[pos_freq],
+            color = "#fc342a", linewidth = 2, label = "Median $m_2$")
+
+    ax.plot(freq[pos_freq], f1_med_old[pos_freq],
+            color = "deepskyblue", linewidth = 2, label = "Median $m_{1,old}$ ")
+    ax.plot(freq[pos_freq], f2_med_old[pos_freq],
+            color = "coral", linewidth = 2, label = "Median $m_{2,old}$")
+
+    # Axis styling
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Frequency [Hz]", fontsize = 16)
+    ax.set_ylabel("Gain", fontsize = 16)
+    ax.set_title("Frequency vs $m_{1,opt}$ & $m_{2,opt}$", fontsize = 18)
+    ax.tick_params(axis = "both", which = "major", labelsize = 14)
+    ax.legend(fontsize = 14)
+    ax.yaxis.set_major_locator(LogLocator(base = 10.0))
+
+    # Minor ticks: base-10 minor ticks (1–9)
+    ax.yaxis.set_minor_locator(
+        LogLocator(base = 10.0, subs = np.arange(1.0, 10.0), numticks = 1000)
+    )
+    ax.grid(True, which = "both", ls = "--", lw = 0.5)
 
     fig.tight_layout()
-    # fig.savefig("../outputs/plots/Median_filters_channel_all_eff90.pdf", dpi=300)
+    fig.show()
+    fig.savefig("../outputs/plots/Median_filters_channel_all_eff90_with_old.pdf", dpi=300)
 
+
+def plot_H1_2_all_channel():
+    import src.dataset as ds
+
+    channels = [3, 5, 9, 11, 13, 15, 17, 19]
+
+    f1_all, f2_all = [], []
+
+    fig, ax = plt.subplots(figsize = (8, 6))
+
+    for ch in channels:
+        f1, f2 = np.load(f"../outputs/Pileup_filter_functions/channel_{ch}/functions_eff90_V2.npy")
+        H_unit, S, nps, w, pulse_factor = ds.get_channel_specs(ch, n_deriv = 1, window_fct = np.hanning)
+        f1,f2 = f1 * H_unit * S, f2 * H_unit * S
+        f1_all.append(np.abs(f1))
+        f2_all.append(np.abs(f2))
+
+        freq = np.fft.fftfreq(len(f1), d = 1e-4)
+        ax.plot(freq[:1000], f1[:1000], alpha = 0.1, color = "k")
+        ax.plot(freq[:1000], f2[:1000], alpha = 0.1, color = "k")
+
+    # Convert to arrays
+    f1_all = np.array(f1_all)
+    f2_all = np.array(f2_all)
+
+    # Median values
+    f1_med = np.median(f1_all, axis = 0)
+    f2_med = np.median(f2_all, axis = 0)
+
+    # Positive frequencies only
+    pos_freq = freq > 0
+
+    ax.plot(freq[pos_freq], f1_med[pos_freq],
+            color = "#2d508c", linewidth = 2, label = "Median $|H_1 \hat{s}|$")
+    ax.plot(freq[pos_freq], f2_med[pos_freq],
+            color = "#fc342a", linewidth = 2, label = "Median $|H_2 \hat{s}|$")
+
+    # Axis styling
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Frequency [Hz]", fontsize = 16)
+    ax.set_ylabel("Gain", fontsize = 16)
+    ax.set_title("Frequency vs $|H_{1,opt}\hat{s}|$ & $|H_{2,opt}\hat{s}|$", fontsize = 18)
+    ax.tick_params(axis = "both", which = "major", labelsize = 14)
+    ax.legend(fontsize = 14)
+    ax.grid(True, which = "both", ls = "--", lw = 0.5)
+    fig.tight_layout()
+    fig.show()
+    fig.savefig("../outputs/plots/Median_filters_channel_all_eff90.pdf", dpi=300)
+def plot_H1_2_old_all_channel():
+    import src.dataset as ds
+
+    channels = [3, 5, 9, 11, 13, 15, 17, 19]
+
+    f1_all, f2_all = [], []
+    f1_all_old, f2_all_old = [], []
+    fig, ax = plt.subplots(figsize = (8, 6))
+
+    for ch in channels:
+        f1, f2 = np.load(f"../outputs/Pileup_filter_functions/channel_{ch}/functions_eff90_V2.npy")
+        H_unit, S, nps, w, pulse_factor = ds.get_channel_specs(ch, n_deriv = 1, window_fct = np.hanning)
+        f1,f2 = f1 * H_unit * S, f2 * H_unit * S
+        f1_all.append(np.abs(f1))
+        f2_all.append(np.abs(f2))
+
+        freq = np.fft.fftfreq(len(f1), d = 1e-4)
+        ax.plot(freq[:1000], f1[:1000], alpha = 0.1, color = "k")
+        ax.plot(freq[:1000], f2[:1000], alpha = 0.1, color = "k")
+        f1, f2 = np.ones(2000), np.abs(H_unit * S)
+        f1, f2 = f1 / np.mean(np.abs(S * f1 * H_unit)), f2 / np.mean(np.abs(S * f2 * H_unit))
+        f1,f2 = f1 * H_unit * S, f2 * H_unit * S
+        f1_all_old.append(np.abs(f1))
+        f2_all_old.append(np.abs(f2))
+
+        freq = np.fft.fftfreq(len(f1), d = 1e-4)
+        ax.plot(freq[:1000], f1[:1000], alpha = 0.1, color = "k")
+        ax.plot(freq[:1000], f2[:1000], alpha = 0.1, color = "k")
+    f1_all_old = np.array(f1_all_old)
+    f2_all_old = np.array(f2_all_old)
+    f1_med_old = np.median(f1_all_old, axis = 0)
+    f2_med_old = np.median(f2_all_old, axis = 0)
+
+    # Convert to arrays
+    f1_all = np.array(f1_all)
+    f2_all = np.array(f2_all)
+
+    # Median values
+    f1_med = np.median(f1_all, axis = 0)
+    f2_med = np.median(f2_all, axis = 0)
+
+    # Positive frequencies only
+    pos_freq = freq > 0
+
+    ax.plot(freq[pos_freq], f1_med[pos_freq],
+            color = "#2d508c", linewidth = 2, label = "Median $|H_1 \hat{s}|$")
+    ax.plot(freq[pos_freq], f2_med[pos_freq],
+            color = "#fc342a", linewidth = 2, label = "Median $|H_2 \hat{s}|$")
+
+    ax.plot(freq[pos_freq], f1_med_old[pos_freq],
+            color = "deepskyblue", linewidth = 2, label = "Median $|H_{1,old} \hat{s}|$")
+    ax.plot(freq[pos_freq], f2_med_old[pos_freq],
+            color = "coral", linewidth = 2, label ="Median $|H_{1,old} \hat{s}|$")
+    # Axis styling
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Frequency [Hz]", fontsize = 16)
+    ax.set_ylabel("Gain", fontsize = 16)
+    ax.set_title("Frequency vs $|H_{1,opt}\hat{s}|$ & $|H_{2,opt}\hat{s}|$", fontsize = 18)
+    ax.tick_params(axis = "both", which = "major", labelsize = 14)
+    ax.legend(fontsize = 14)
+    ax.grid(True, which = "both", ls = "--", lw = 0.5)
+    fig.tight_layout()
+    fig.show()
+    fig.savefig("../outputs/plots/Median_filters_channel_all_eff90.pdf", dpi=300)
+
+def Y_distrib_fixe_r_dt():
+    from torch.utils.data import TensorDataset
+    import src.dataset as ds
+    import src.simulation as sim
+    import src.analysis as an
+    from torch import from_numpy
+    n_deriv = 1
+    channel = 15
+    f1_opt, f2_opt = np.load(f"../outputs/Pileup_filter_functions/channel_{channel}/functions_eff90_V3.npy")
+
+    H_unit, S, nps, w, pulse_factor = ds.get_channel_specs(channel, n_deriv = n_deriv, window_fct = np.hanning)
+    fpulses, signal_freq, noise_freq = sim.simulate_frequency_pulses_fixed_dt_r(S, nps, w, 3e-4, 0.5, nsim = 10000,
+                                                                                seed = 15, signal_scale = 0.001874)
+    dataset_simu = TensorDataset(from_numpy(np.fft.ifft(fpulses, axis = 1).real.astype(np.float32)))
+    PSD_simu, _, _ = an.get_PSD_interpole(dataset_simu, H_unit, f1_opt, f2_opt)
+    plt.hist(PSD_simu, bins = 100, zorder = 3, color = "#2d508c")
+    plt.xlim(0.9955, 0.9998)
+    plt.xlabel("PSD")
+    ax = plt.gca()
+    ax.grid(True, zorder = 0, which = 'both', linestyle = '--', linewidth = 0.5)
+    plt.ylabel("Number of events")
+    plt.title("PSD Distribution for simulated pile-up events r=0.5, dt=0.3 ms")
+
+
+from matplotlib.colors import LogNorm
+def plot_covariance_matrix(result):
+    plt.figure(figsize=(8, 6))
+    plt.imshow(result.covar, cmap='viridis', aspect='auto',norm = LogNorm(vmin=1e-12, vmax=np.max(result_2.covar)))
+    plt.colorbar(label='Covariance')
+    plt.title('Covariance Matrix of Fit Parameters (Bessel order 2)')
+    plt.xticks(range(len(result.var_names)), result.var_names, rotation=45)
+    plt.yticks(range(len(result.var_names)), result.var_names)
+    plt.show()
+
+import matplotlib as mpl
+
+def plot_bessel_filters(fcts, fcs):
+    fig, ax = plt.subplots()
+    cmap = plt.get_cmap('viridis')
+    freq = np.fft.rfftfreq(len(fcts[0][0]), d=1e-4)
+    for idx,(f1,f2 )in enumerate(fcts):
+        ax.plot(freq,f1[:1001],c=cmap(idx/len(fcts)),alpha=0.7)
+        ax.plot(freq,f2[:1001],c=cmap(idx/len(fcts)),alpha=0.7)
+    sm = mpl.cm.ScalarMappable(cmap=cmap, norm=mpl.colors.Normalize(vmin=min(fcs), vmax=max(fcs)))
+    cbar = fig.colorbar(sm, ax=ax, pad=0.01)
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.set_xlabel('Frequency (Hz)')
+    cbar.set_label('Bessel Filter Cutoff Frequency (Hz)')
+    ax.set_ylabel('Filter Amplitude')
+    plt.show()
 if __name__ == "__main__":
-    J_vs_rp()
+    plot_m1_2_all_channel()
