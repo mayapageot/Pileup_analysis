@@ -135,7 +135,7 @@ def compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distri
     return torch.mean(A*ratio_distribution[:, None]).real
 
 
-def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_sigma = 1.28, n_trials = 1000):
+def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_sigma = 1.28, n_trials = 1000,verbose = True):
     """
     Optimizes two filters (f1 and f2) to maximize the J metric using gradient-based optimization.
 
@@ -192,7 +192,7 @@ def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_
         optimizer.step()
 
         # Uncomment the following lines to print progress every 100 steps
-        if step % 100 == 0:
+        if step % 100 == 0 and verbose:
             print(f"Step {step}: J = {J.item():.6f}")
     print(f"Step {step}: J = {J.item():.6f}")
     # Convert optimized filters to numpy arrays
@@ -495,7 +495,7 @@ def create_NPS(dataset, filter=None, n_deriv = 0, filter_prederiv=None,rms_thr =
     """
     nps_accum = None
     count = 0
-    filter = filter if filter is not None else np.ones(dataset.win_length)
+    filter = filter if filter is not None else np.ones(dataset[0].shape[0], dtype=np.float32)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     for pulses in loader:
         pulses = pulses.numpy()
@@ -515,3 +515,16 @@ def create_NPS(dataset, filter=None, n_deriv = 0, filter_prederiv=None,rms_thr =
         count += 1
     nps = nps_accum / count
     return nps
+
+def compute_BI(data_pileup, data_single, acceptance, H_unit, f1_opt, f2_opt, window_fct = np.hanning,n_deriv = 0, full_output = False):
+    import utility.functions as fn
+    PSD_pileup, Amp_1_pileup, Amp_2_pileup = get_PSD_interpole(data_pileup, H_unit, f1_opt, f2_opt,
+                                                                  window_fct = window_fct, n_deriv = n_deriv)
+    PSD_single, Amp_1_single, Amp_2_single = get_PSD_interpole(data_single, H_unit, f1_opt, f2_opt,
+                                                                  window_fct = window_fct, n_deriv = n_deriv)
+    cut = np.percentile(PSD_single, 100 - acceptance * 100)
+    rp = np.mean(PSD_pileup < cut)
+    BI = fn.calculate_BI(rp, 0.8)
+    if full_output:
+        return BI, rp, PSD_pileup, PSD_single, Amp_1_pileup, Amp_2_pileup, Amp_1_single, Amp_2_single
+    return BI, rp
