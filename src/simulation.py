@@ -1,6 +1,7 @@
 import numpy as np
 from utility.double_beta_spectrum import inverse_cdf_ratio2b
 
+from scipy.signal import bessel, bilinear, lfilter
 
 def simulate_frequency_pulses(S, nps, detector_sigma, w, nsim=10000, seed=1234, signal_scale=0.002, dt_max=8e-4):
     """
@@ -65,3 +66,52 @@ def simulate_frequency_pulses(S, nps, detector_sigma, w, nsim=10000, seed=1234, 
     # --- final frequency-domain realizations ---
     fpulses = signal_freq * phase + noise_freq
     return fpulses, signal_freq, noise_freq, generated_r, generated_dt
+
+def simulate_frequency_pulses_fixed_dt_r(S, nps, w, dt ,r ,nsim=10000, seed=1234, signal_scale=0.002):
+    rng = np.random.default_rng(seed)
+    M = S.size
+
+    # --- complex Gaussian noise with spectral shape ---
+    complex_gauss = (rng.normal(size = (nsim, M)) + 1j * rng.normal(size = (nsim, M))) * np.sqrt(2)
+    noise_freq = complex_gauss * np.sqrt(nps[None, :])  # (nsim, M)
+    exp_term = np.exp(-1j * w * dt)  # (nsim, M)
+    phase = (1 - r) + r* exp_term
+    signal_freq = signal_scale * S[None, :]
+    fpulses = signal_freq * phase * np.exp(-1j * w * np.random.random(nsim)[:,None]*1e-4) + noise_freq
+    return fpulses, signal_freq, noise_freq
+
+
+def pulse_model(t, A, t0, tau_rise, tau_decay1, tau_decay2, p):
+    """Pulse model with 1 rise time and 2 decay times."""
+    t_shifted = t - t0
+    pulse = np.zeros_like(t_shifted)
+    mask = t_shifted >= 0
+    rise = 1 - np.exp(-t_shifted[mask]/tau_rise)
+    decay = p * np.exp(-t_shifted[mask]/tau_decay1) + (1-p) * np.exp(-t_shifted[mask]/tau_decay2)
+    pulse[mask] = A * rise * decay
+    return pulse
+
+def bessel_filter_coeffs(order, fc, fs):
+    """Design a digital Bessel filter using bilinear transform."""
+    # Normalize cutoff for digital design
+    wc = 2 * np.pi * fc    # analog rad/s cutoff
+    # Analog Bessel filter design
+    b_a, a_a = bessel(order, wc, analog=True, norm='phase')
+    # Convert to digital using bilinear transform
+    b_d, a_d = bilinear(b_a, a_a, fs)
+    return b_d, a_d
+
+def apply_bessel_to_pulse(t, pulse, fc=450, order=2, fs=1e4):
+    b_d, a_d = bessel_filter_coeffs(order, fc, fs)
+    filtered_pulse = lfilter(b_d, a_d, pulse)
+    return filtered_pulse
+
+def apply_bessel_to_pulse(t, pulse, fc=450, order=2, fs=1e4):
+    b_d, a_d = bessel_filter_coeffs(order, fc, fs)
+    filtered_pulse = lfilter(b_d, a_d, pulse)
+    return filtered_pulse
+
+def filtered_pulse_model(t, A, t0, tau_rise, tau_decay1, tau_decay2, p, fc, order):
+    pulse = pulse_model(t, A, t0, tau_rise, tau_decay1, tau_decay2, p)
+    filtered_pulse = apply_bessel_to_pulse(t, pulse, fc=fc, order=order, fs=1e4)
+    return filtered_pulse.real
