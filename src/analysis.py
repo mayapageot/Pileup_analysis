@@ -135,7 +135,8 @@ def compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distri
     return torch.mean(A*ratio_distribution[:, None]).real
 
 
-def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_sigma = 1.28, n_trials = 1000,verbose = True):
+def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_sigma = 1.28, n_trials = 1000,
+                     f1_init=None,f2_init=None,verbose = True):
     """
     Optimizes two filters (f1 and f2) to maximize the J metric using gradient-based optimization.
 
@@ -161,8 +162,14 @@ def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_
     S_H_delayed, S_H, S2_over_nps = precompute_constants(S, H_unit, w, t, nps)
     # Initialize filter parameters as complex tensors
     n = len(H_unit)
-    f1_param = torch.nn.Parameter(torch.rand(n//2+1, dtype = torch.float))
-    f2_param = torch.nn.Parameter(torch.rand(n//2+1, dtype = torch.float))
+    f1_init = torch.rand(n//2+1, dtype = torch.float) if f1_init is None else f1_init
+    f2_init = torch.rand(n//2+1, dtype = torch.float) if f2_init is None else f2_init
+    if len(f1_init) > n//2+1:
+        f1_init = f1_init[:n//2+1]
+    if len(f2_init) > n//2+1:
+        f2_init = f2_init[:n//2+1]
+    f1_param = torch.nn.Parameter(f1_init)
+    f2_param = torch.nn.Parameter(f2_init)
 
     # Set up the optimizer
     optimizer = torch.optim.Adam([f1_param, f2_param], lr = 1e-2)
@@ -481,7 +488,7 @@ def get_PSD_interpole_torch(dataset, H_unit, f1, f2,
     return PSD.cpu().numpy(), Amp_1.cpu().numpy(), Amp_2.cpu().numpy()
 
 
-def create_NPS(dataset, filter=None, n_deriv = 0, filter_prederiv=None,rms_thr = 0.0005,batch_size=128, window_fct=np.ones):
+def create_NPS(dataset, filter=None, n_deriv = 0, filter_prederiv=None,rms_thr = 0.0005,batch_size=128, window_fct=np.hanning):
     """
     Computes the Noise Power Spectrum (NPS) for the given dataset.
 
@@ -527,4 +534,36 @@ def compute_BI(data_pileup, data_single, acceptance, H_unit, f1_opt, f2_opt, win
     BI = fn.calculate_BI(rp, 0.8)
     if full_output:
         return BI, rp, PSD_pileup, PSD_single, Amp_1_pileup, Amp_2_pileup, Amp_1_single, Amp_2_single
-    return BI, rp
+    else :
+        return BI, rp
+from scipy.stats import gaussian_kde
+import utility.functions as fn
+
+def compute_BI_uncertainty(PSD_single, PSD_pileup, acceptance, rp, K=fn.K):
+    N_single = len(PSD_single)
+    N_pileup = len(PSD_pileup)
+
+    # --- 1. Uncertainty from pileup binomial statistics ---
+    sigma_rp_pileup = np.sqrt(rp * (1 - rp) / N_pileup)
+
+    # --- 2. Uncertainty of the percentile cut ---
+    cut = np.percentile(PSD_single, 100 - acceptance*100)
+
+    # estimate PDFs for PSDsingle and PSDpileup
+    kde_single = gaussian_kde(PSD_single)
+    kde_pileup = gaussian_kde(PSD_pileup)
+
+    f_single = kde_single.evaluate(cut)[0]
+    f_pileup = kde_pileup.evaluate(cut)[0]
+
+    a = 1 - acceptance
+    sigma_cut = np.sqrt(a*(1-a)) / (np.sqrt(N_single) * f_single)
+
+    # derivative of rp wrt cut
+    drp_dcut = -f_pileup
+    sigma_rp_cut = abs(drp_dcut) * sigma_cut
+    # --- total ---
+
+    sigma_rp = np.sqrt(sigma_rp_pileup**2 + sigma_rp_cut**2)
+    sigma_BI = K * sigma_rp
+    return sigma_rp, sigma_BI
