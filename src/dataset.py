@@ -5,10 +5,11 @@ import glob
 from dotenv import load_dotenv
 import ast
 import torch
+import struct
 load_dotenv()
 main_dir = os.getenv("DATA_PATH")
-# if os.path.isdir(main_dir) == False:
-#     main_dir = "/local/home/mp274748/Documents/data/"
+if os.path.isdir(main_dir) == False:
+    main_dir = "/local/home/mp274748/Documents/data/RUN9/"
 
 
 class NumpyDataset(Dataset):
@@ -22,7 +23,7 @@ class NumpyDataset(Dataset):
         return self.data[idx]
 
 class BinaryDataset(Dataset):
-    def __init__(self, file_path, win_length, positions, win_shift=0, dtype=np.uint32):
+    def __init__(self, file_path, win_length, positions=None, win_shift=0, dtype=np.uint32):
         """
         Initializes the dataset.
 
@@ -34,14 +35,17 @@ class BinaryDataset(Dataset):
             dtype (numpy dtype): Data type for reading binary data (default: np.uint32).
         """
         self.file_path = file_path
+        header = read_bin_header(file_path)
+        self.samplingRate = header["samplingRate"]
+        self.adcRange = header["adcRange"]
         self.win_length = int(win_length)
-        self.positions = positions
-        self.win_shift = int(win_shift)
         self.dtype = dtype
-
         # Memory-map the binary file to allow efficient reading without loading the entire file into memory.
         # Skips the first 4 bytes of the file using offset=4 (often used to skip a header or metadata).
         self.file_map = np.memmap(self.file_path, dtype=dtype, mode='r', offset=4)
+        self.positions = positions if positions is not None else np.arange(0, len(self.file_map) - win_length, win_length)
+        self.win_shift = int(win_shift)
+
 
     def load_and_process_window(self, file_map, start):
         """
@@ -59,7 +63,7 @@ class BinaryDataset(Dataset):
 
         # Bit-shift each 32-bit value to the right by 8 bits, convert to float64,
         # normalize from raw values to a range between -10.24 and +10.24
-        np_data = ((np.right_shift(np_data, 8).astype(np.float64) / (2 ** 23)) * 10.24 - 10.24)
+        np_data = ((np.right_shift(np_data, 8).astype(np.float64) / (2 ** 23)) * self.adcRange - self.adcRange)
 
         return np_data
 
@@ -97,6 +101,51 @@ class BinaryDatasetDenoised(BinaryDataset):
         start = self.positions[index] - self.win_shift
         raw_data = self.load_and_process_window(self.file_map, start) - self.denoised_data[index]
         return raw_data
+
+
+def load_binary_file(file_path, dtype=np.uint32):
+    """
+    Loads a binary file into a numpy array.
+
+    Args:
+        file_path (str): Path to the binary file.
+        dtype (numpy dtype): Data type for reading binary data (default: np.uint32).
+
+    Returns:
+        np.array: Numpy array containing the binary data.
+    """
+    data = np.fromfile(file_path, dtype=dtype, offset=12)
+    adc_range = read_bin_header(file_path)["adcRange"]
+    ((np.right_shift(data, 8).astype(np.float64) / (2 ** 23)) * adc_range - adc_range)
+    return data
+
+def read_bin_header(path):
+    """
+    Read BinHeader as defined in C++:
+        char endian
+        char padding[3]
+        float samplingRate
+        float adcRange
+    Total: 12 bytes
+    """
+
+    header_struct = struct.Struct("<c3xff")
+
+    with open(path, "rb") as f:
+        data = f.read(header_struct.size)
+        if len(data) != header_struct.size:
+            raise ValueError("File too small to contain BinHeader")
+
+        endian, samplingRate, adcRange = header_struct.unpack(data)
+
+    # endian comes as a bytes object of length 1
+    endian = endian.decode('ascii', errors='ignore')
+
+    return {
+        "endian": endian,
+        "samplingRate": samplingRate,
+        "adcRange": adcRange
+    }
 
 def find_file(target,specific_subdir=""):
     file_path = glob.glob(os.path.join(main_dir, specific_subdir,"**", target), recursive = True)[0]
@@ -289,6 +338,7 @@ def get_amp_Q_val(channel):
     params = load_params_simu(find_file(target, specific_subdir = "RUN9_pulse_injected_new/"))
     return params["LY_close"] * 3.034 * params["ampl_Tl"] / 2.614511 / params["LY_far"] * params["area_factor"]
 
+
 def get_noise_dataset(channel,denoise=False):
     win_length = 2000
     shift = 0
@@ -298,7 +348,7 @@ def get_noise_dataset(channel,denoise=False):
         data_noise = BinaryDatasetDenoised(find_file(f"000813_20230628T161508_{channel:03}_???.bin"),noise_pred[:,noise_pred.shape[1]//2-win_length // 2 -shift:noise_pred.shape[1]//2+win_length // 2 -shift]*Global_stds[channels.index(channel)], win_length, positions_single, win_shift=win_length // 2 - shift)
     else :
         dataset_single_name = "pup_n1-d0_000813_20230628T161508"
-        file_path_single, path_pos_single = ds.find_files(dataset_single_name, channel,pos_prefix="_bis", file_suffix= "", differenciate=False,
+        file_path_single, path_pos_single = find_files(dataset_single_name, channel,pos_prefix="_bis", file_suffix= "", differenciate=False,
                          specific_subdir="RUN9_pulse_injected_new/")
         pos_file_single = np.loadtxt(path_pos_single)[:15000]
         positions_single = (pos_file_single[:, 0] // 4).astype(int)
