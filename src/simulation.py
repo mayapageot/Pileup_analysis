@@ -115,3 +115,25 @@ def filtered_pulse_model(t, A, t0, tau_rise, tau_decay1, tau_decay2, p, fc, orde
     pulse = pulse_model(t, A, t0, tau_rise, tau_decay1, tau_decay2, p)
     filtered_pulse = apply_bessel_to_pulse(t, pulse, fc=fc, order=order, fs=1e4)
     return filtered_pulse.real
+
+if __name__ == "__main__":
+    from torch.utils.data import TensorDataset
+    import src.dataset as ds
+    import src.analysis as an
+    import torch
+    n_deriv = 1
+    channel = 15
+    H_unit, S, nps, w, pulse_factor = ds.get_channel_specs(channel, n_deriv = n_deriv, window_fct = np.hanning)
+    f1_opt, f2_opt = np.load(f"../outputs/Pileup_filter_functions/channel_{channel}/functions_eff90_V3.npy")
+    fpulses, signal_freq, noise_freq, generated_r, generated_dt_single = simulate_frequency_pulses(S, nps,
+                                                                                                       8.59898e-05, w,
+                                                                                                       signal_scale = 0.001874,
+                                                                                                       nsim = 10000,
+                                                                                                       dt_max = 0)
+    dataset_simu = TensorDataset(torch.from_numpy(np.fft.ifft(fpulses, axis = 1).real.astype(np.float32)))
+    PSD_simu_single, _, _ = an.get_PSD_interpole(dataset_simu, H_unit, f1_opt, f2_opt)
+    fpulses, signal_freq, noise_freq, generated_r, generated_dt = simulate_frequency_pulses(S, nps, 8.59898e-05, w,
+                                                                                                signal_scale = 0.001874,
+                                                                                                nsim = 10000)
+    dataset_simu = TensorDataset(torch.from_numpy(np.fft.ifft(fpulses, axis = 1).real.astype(np.float32)))
+    PSD_simu, Amp_1_simu, Amp_2_simu = an.get_PSD_interpole(dataset_simu, H_unit, f1_opt, f2_opt)
