@@ -513,7 +513,11 @@ def plot_covariance_matrix(result):
 
 import matplotlib as mpl
 
-def plot_bessel_filters(fcts, fcs):
+def plot_bessel_filters(channel,fcs):
+    fcts = []
+    for fc in fcs:
+        f1_f2 = np.load(f"../outputs/Pileup_filter_functions/channel_{channel}/bessel_study/functions_fc_{fc}.npy")
+        fcts.append((f1_f2[0], f1_f2[1]))
     fig, ax = plt.subplots()
     cmap = plt.get_cmap('viridis')
     freq = np.fft.rfftfreq(len(fcts[0][0]), d=1e-4)
@@ -528,5 +532,37 @@ def plot_bessel_filters(fcts, fcs):
     cbar.set_label('Bessel Filter Cutoff Frequency (Hz)')
     ax.set_ylabel('Filter Amplitude')
     plt.show()
+
+def plot_J_vs_bessel_fc():
+    channels = [3, 5, 9, 11, 13, 15, 17, 19]
+    channel_ID = [5, 9, 11, 10, 4, 2, 12, 3]
+    for index_channel in np.argsort(channel_ID):
+        channel = channels[index_channel]
+        Js = np.loadtxt(f"../outputs/Pileup_filter_functions/channel_{channel}/bessel_study/Js_vs_fc")
+        fcs = [500, 750, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500]
+        plt.plot(fcs, 1 - np.array(Js), marker = 'o', label = f'detector ID {channel_ID[index_channel]}')
+    plt.xlabel('Bessel Filter Cutoff Frequency (Hz)',fontdict = {'size':14})
+    plt.ylabel('1-J aka "rejection power"',fontdict = {'size':14})
+    plt.legend(fontsize = 12)
+    plt.tick_params(axis = 'both', which = 'major', labelsize = 14)
+    plt.show()
+
+def plot_mp_freq_all_channel():
+    import src.dataset as ds
+    channels = [3, 5, 9, 11, 13, 15, 17, 19]
+    channel_ID = [5, 9, 11, 10, 4, 2, 12, 3]
+    plt.figure(figsize = (8, 6))
+    for index_channel in np.argsort(channel_ID):
+        channel = channels[index_channel]
+        H_unit, S, nps, w, pulse_factor = ds.get_channel_specs(channel, n_deriv = 0, window_fct = np.hanning)
+        plt.plot(w[:1000] / (2 * np.pi), np.abs(S)[:1000], label = f"detector ID {channel_ID[index_channel]}")
+    plt.legend(fontsize = 14)
+    plt.tick_params(axis = 'both', which = 'major', labelsize = 14)
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.xlabel('Frequency (Hz)', fontdict = {'size': 14})
+    plt.ylabel('Pulse Amplitude Spectrum |S(w)|', fontdict = {'size': 14})
+    plt.show()
+
 if __name__ == "__main__":
     plot_m1_2_all_channel()
