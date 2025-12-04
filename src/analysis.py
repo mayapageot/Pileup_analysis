@@ -4,6 +4,8 @@ from scipy.interpolate import interp1d
 import torch
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
+from scipy.stats import gaussian_kde
+import utility.functions as fn
 norm = Normal(0, 1)
 
 
@@ -485,7 +487,7 @@ def get_PSD_interpole_torch(dataset, H_unit, f1, f2,
     PSD = Amp_1 / Amp_2
 
     # return CPU numpy if desired
-    return PSD.cpu().numpy(), Amp_1.cpu().numpy(), Amp_2.cpu().numpy()
+    return PSD, Amp_1, Amp_2
 
 
 def create_NPS(dataset, filter=None, n_deriv = 0, filter_prederiv=None,rms_thr = 0.0005,batch_size=128, window_fct=np.hanning):
@@ -524,20 +526,18 @@ def create_NPS(dataset, filter=None, n_deriv = 0, filter_prederiv=None,rms_thr =
     return nps
 
 def compute_BI(data_pileup, data_single, acceptance, H_unit, f1_opt, f2_opt, window_fct = np.hanning,n_deriv = 0, full_output = False):
-    import utility.functions as fn
     PSD_pileup, Amp_1_pileup, Amp_2_pileup = get_PSD_interpole(data_pileup, H_unit, f1_opt, f2_opt,
                                                                   window_fct = window_fct, n_deriv = n_deriv)
     PSD_single, Amp_1_single, Amp_2_single = get_PSD_interpole(data_single, H_unit, f1_opt, f2_opt,
                                                                   window_fct = window_fct, n_deriv = n_deriv)
     cut = np.percentile(PSD_single, 100 - acceptance * 100)
     rp = np.mean(PSD_pileup < cut)
-    BI = fn.calculate_BI(rp, 0.8)
+    BI = fn.K * (1-rp)
     if full_output:
         return BI, rp, PSD_pileup, PSD_single, Amp_1_pileup, Amp_2_pileup, Amp_1_single, Amp_2_single
     else :
         return BI, rp
-from scipy.stats import gaussian_kde
-import utility.functions as fn
+
 
 def compute_BI_uncertainty(PSD_single, PSD_pileup, acceptance, rp, K=fn.K):
     N_single = len(PSD_single)
@@ -566,4 +566,149 @@ def compute_BI_uncertainty(PSD_single, PSD_pileup, acceptance, rp, K=fn.K):
 
     sigma_rp = np.sqrt(sigma_rp_pileup**2 + sigma_rp_cut**2)
     sigma_BI = K * sigma_rp
+    return sigma_rp, sigma_BI
+
+import torch
+import math
+
+def _gaussian_kde_torch(x: torch.Tensor, points: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
+    """
+    Evaluate Gaussian KDE of `points` at locations x.
+    points: shape (N,)
+    x: shape () or (M,)
+    returns: same shape as x (pdf values)
+    Uses Silverman's rule of thumb for bandwidth.
+    Pure PyTorch implementation so it stays on the same device/dtype as inputs.
+    """
+    points = points.to(x.device)
+    N = points.numel()
+    if N == 0:
+        return torch.zeros_like(x)
+
+    # compute bandwidth (Silverman rule)
+    std = torch.std(points, unbiased=True)
+    # if std is zero (all points equal), set small std
+    std = std.clamp_min(eps)
+    h = 1.06 * std * (N ** (-1/5))
+    h = h.clamp_min(eps)
+
+    # Expand for vectorized squared distances
+    # x shape (...), points shape (N,)
+    # compute ((x - points)/h)**2 sum over points
+    # We want pdf(x) = (1 / (N * h * sqrt(2pi))) * sum exp(-0.5 * ((x - points)/h)**2)
+    # Vectorized: (x[...,None] - points[None,...]) -> shape (..., N)
+    diff = (x.unsqueeze(-1) - points.unsqueeze(0)) / h  # (..., N)
+    exponent = -0.5 * diff * diff
+    # Use log-sum-exp style? not necessary for typical sizes
+    pdf = torch.exp(exponent).sum(dim=-1) / (N * h * math.sqrt(2 * math.pi))
+    return pdf
+
+
+def compute_BI_torch(data_pileup,
+                     data_single,
+                     acceptance,
+                     H_unit,
+                     f1_opt,
+                     f2_opt,
+                     K=None,
+                     window_fct=torch.ones,
+                     n_deriv=0,
+                     full_output=False,
+                     **kwargs):
+    """
+    Torch version of compute_BI. Returns BI and rp (and optionally full output).
+    - data_pileup, data_single: datasets acceptable by get_PSD_interpole_torch
+    - acceptance: float in (0,1)
+    - H_unit, f1_opt, f2_opt: passed to get_PSD_interpole_torch
+    - K: prefactor (defaults to fn.K if None)
+    - window_fct, n_deriv forwarded
+    - kwargs forwarded to get_PSD_interpole_torch (batch_size, etc.)
+    """
+    if K is None:
+        try:
+            K = fn.K
+        except NameError:
+            raise ValueError("K not provided and fn.K not found. Pass K explicitly.")
+
+    # Expect PSDs and amps as torch Tensors
+    PSD_pileup, Amp_1_pileup, Amp_2_pileup = get_PSD_interpole_torch(
+        data_pileup, H_unit, f1_opt, f2_opt, window_fct=window_fct, n_deriv=n_deriv, **kwargs
+    )
+    PSD_single, Amp_1_single, Amp_2_single = get_PSD_interpole_torch(
+        data_single, H_unit, f1_opt, f2_opt, window_fct=window_fct, n_deriv=n_deriv, **kwargs
+    )
+
+    # ensure 1-D tensors
+    PSD_pileup = PSD_pileup.flatten()
+    PSD_single = PSD_single.flatten()
+
+    # percentile: torch.quantile expects q in [0,1]
+    # We want the value at 100 - acceptance*100 percentile => 1 - acceptance
+    q = torch.tensor(1.0 - acceptance, device=PSD_single.device, dtype=PSD_single.dtype)
+    cut = torch.quantile(PSD_single, q)
+
+    rp = torch.mean((PSD_pileup < cut).to(dtype=PSD_pileup.dtype))  # fraction of pileup below cut
+    BI = K * (1.0 - rp)
+
+    if full_output:
+        return BI, rp, PSD_pileup, PSD_single, Amp_1_pileup, Amp_2_pileup, Amp_1_single, Amp_2_single
+    else:
+        return BI, rp
+
+
+def compute_BI_uncertainty_torch(PSD_single: torch.Tensor,
+                                 PSD_pileup: torch.Tensor,
+                                 acceptance: float,
+                                 rp: torch.Tensor,
+                                 K=None,
+                                 eps: float = 1e-12):
+    """
+    Torch version of compute_BI_uncertainty.
+
+    - PSD_single, PSD_pileup: 1D torch tensors
+    - acceptance: float in (0,1)
+    - rp: torch scalar (fraction of pileup below cut)
+    - K: optional prefactor (defaults to fn.K)
+    Returns: (sigma_rp, sigma_BI) as torch scalars (same device/dtype as inputs)
+    """
+    device = PSD_single.device
+    dtype = PSD_single.dtype
+
+    if K is None:
+        try:
+            K = fn.K
+        except NameError:
+            raise ValueError("K not provided and fn.K not found. Pass K explicitly.")
+
+    N_single = PSD_single.numel()
+    N_pileup = PSD_pileup.numel()
+
+    if N_single == 0 or N_pileup == 0:
+        raise ValueError("PSD_single and PSD_pileup must be non-empty tensors")
+
+    # --- 1. Uncertainty from pileup binomial statistics ---
+    # rp is a torch scalar
+    sigma_rp_pileup = torch.sqrt(rp * (1.0 - rp) / N_pileup)
+
+    # --- 2. Uncertainty of the percentile cut ---
+    q = torch.tensor(1.0 - acceptance, device=device, dtype=dtype)
+    cut = torch.quantile(PSD_single, q)
+
+    # estimate PDFs for PSD_single and PSD_pileup using torch KDE
+    # evaluate kde at `cut` (scalar)
+    cut_tensor = cut.reshape(1)  # shape (1,)
+    f_single = _gaussian_kde_torch(cut_tensor, PSD_single, eps=eps)[0].clamp_min(eps)
+    f_pileup = _gaussian_kde_torch(cut_tensor, PSD_pileup, eps=eps)[0].clamp_min(eps)
+
+    a = 1.0 - acceptance
+    sigma_cut = math.sqrt(a * (1.0 - a)) / (math.sqrt(N_single) * f_single)
+
+    # derivative of rp wrt cut (drp/dcut) = -pdf_pileup(cut)  (for continuous pdf)
+    drp_dcut = -f_pileup
+    sigma_rp_cut = torch.abs(drp_dcut) * sigma_cut
+
+    # total
+    sigma_rp = torch.sqrt(sigma_rp_pileup ** 2 + sigma_rp_cut ** 2)
+    sigma_BI = K * sigma_rp
+
     return sigma_rp, sigma_BI
