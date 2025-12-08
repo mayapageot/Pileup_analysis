@@ -58,8 +58,8 @@ def compute_vars(S2_over_nps, f1, f2):
 
 
 def compute_sigma_ratio(mu1, mu2, var1, var2, cov12):
-    varY = var1 / mu2 ** 2 + (mu1 ** 2) * var2 / mu2 ** 4 - 2 * mu1 * cov12.real / mu2 ** 3
-    return torch.sqrt(varY).real * 2
+    varY = var1 / mu2 ** 2 + (mu1 ** 2) * var2 / mu2 ** 4 - 2 * mu1 * cov12 / mu2 ** 3
+    return torch.sqrt(varY) * 2
 
 
 def compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, return_all=False):
@@ -170,8 +170,8 @@ def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_
         f1_init = f1_init[:n//2+1]
     if len(f2_init) > n//2+1:
         f2_init = f2_init[:n//2+1]
-    f1_param = torch.nn.Parameter(f1_init)
-    f2_param = torch.nn.Parameter(f2_init)
+    f1_param = torch.nn.Parameter(f1_init.to(S.device))
+    f2_param = torch.nn.Parameter(f2_init.to(S.device))
 
     # Set up the optimizer
     optimizer = torch.optim.Adam([f1_param, f2_param], lr = 1e-2)
@@ -205,8 +205,8 @@ def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_
             print(f"Step {step}: J = {J.item():.6f}")
     print(f"Step {step}: J = {J.item():.6f}")
     # Convert optimized filters to numpy arrays
-    f1 = np.abs(f1.detach().numpy())
-    f2 = np.abs(f2.detach().numpy())
+    f1 = np.abs(f1.detach().cpu().numpy())
+    f2 = np.abs(f2.detach().cpu().numpy())
     return f1, f2, J_values
 
 
@@ -394,36 +394,59 @@ def cubic_interp1d_scipy(y, fine_x):
     return out   # shape (B, N)
 
 
+def batch_iterator(dataset, batch_size=4096, device="cpu", use_loader=True, shuffle=False, num_workers=4, prefetch_factor=2):
+    """
+    Returns a generator yielding batches of pulses, either via DataLoader or custom get_batch().
+    """
+    if use_loader:
+        # Standard DataLoader
+        from torch.utils.data import DataLoader
+        loader = DataLoader(dataset,
+                            batch_size=batch_size,
+                            shuffle=shuffle,
+                            pin_memory=True,
+                            num_workers=num_workers,
+                            prefetch_factor=prefetch_factor)
+        for batch in loader:
+            yield batch.to(device, dtype=torch.float32)
+    else:
+        # Custom get_batch loop (vectorized, fast)
+        n_batches = (len(dataset) + batch_size - 1) // batch_size
+        for i in range(n_batches):
+            indices = torch.arange(i*batch_size, min((i+1)*batch_size, len(dataset)))
+            batch = dataset.get_batch(indices)
+            yield batch.to(device, dtype=torch.float32)
+
+
 def get_PSD_interpole_torch(dataset, H_unit, f1, f2,
                             batch_size=128, interpolation_range=5,
                             jitter_max=20, filter=None,
                             n_deriv=0, filter_prederiv=None,
-                            window_fct=torch.ones):
+                            window_fct=torch.ones,use_loader=False,device="cpu"):
     """
     Fully GPU-enabled PSD computation
     """
 
     device = H_unit.device
-
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, pin_memory=True)
+    loader = batch_iterator(dataset, batch_size=batch_size, device='cpu', use_loader=use_loader)
 
     win_len = dataset.win_length
     if filter is None:
         filter = torch.ones(win_len, device=device)
 
-    H_1_filtered = f1 * H_unit * filter
-    H_2_filtered = f2 * H_unit * filter
+    H_1_filtered = (f1 * H_unit * filter).to(dtype=torch.complex64)
+    H_2_filtered = (f2 * H_unit * filter).to(dtype=torch.complex64)
 
     Amp_1, Amp_2 = [], []
 
     # prepare fine X grid for interpolation
     fine_x = torch.arange(-interpolation_range, interpolation_range + 1, 0.05,
-                          device = device, dtype = torch.float64)
+                          device = device, dtype = torch.float32)
 
     for pulses in loader:
         if isinstance(pulses, (list, tuple)):
             pulses = pulses[0]
-        pulses = pulses.to(device)
+        pulses = pulses.to(device, dtype=torch.float32)
 
         # subtract baseline (first 500 samples)
         pulses = pulses - pulses[:, :500].mean(dim=1, keepdim=True)

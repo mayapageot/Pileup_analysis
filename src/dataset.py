@@ -102,6 +102,59 @@ class BinaryDatasetDenoised(BinaryDataset):
         raw_data = self.load_and_process_window(self.file_map, start) - self.denoised_data[index]
         return raw_data
 
+class CachedBinaryDataset(Dataset):
+    def __init__(self, file_path, win_length, positions,
+                 win_shift=0, device="cpu", dtype=np.uint32):
+
+        self.win_length = int(win_length)
+        self.n_windows = len(positions)
+
+        header = read_bin_header(file_path)
+        self.samplingRate = header["samplingRate"]
+        self.adcRange = header["adcRange"]
+
+        # Load full file into memory (skip first 4 bytes)
+        full_raw = np.fromfile(file_path, dtype=dtype)[1:]
+
+        # Apply shift
+        starts = positions.astype(np.int64) - win_shift
+
+        # ---- VECTORIZED EXTRACTION (no loops) ----
+        # Build 2D indices:
+        # shape = (n_windows, win_length)
+        idx = starts[:, None] + np.arange(self.win_length, dtype=np.int64)[None, :]
+
+        # Extract every window at once
+        raw_windows = full_raw[idx]     # FAST: direct 2D fancy indexing
+
+        # ---- VECTORIZED PROCESSING ----
+        # Right shift all values at once
+        shifted = np.right_shift(raw_windows, 8).astype(np.float32)
+
+        # Normalize all windows at once
+        all_windows = (shifted / (2**23)) * self.adcRange - self.adcRange
+
+        # Convert to torch
+        self.data = torch.from_numpy(all_windows)
+        if device == "cuda":
+            self.data = self.data.cuda(non_blocking=True)
+
+    def set_win_length(self, win_length):
+        win_length = int(win_length)
+        if win_length > self.win_length:
+            raise ValueError(f"Requested window length {win_length} exceeds max length {self.full_data.shape[1]}")
+        self.data = self.data[:, :win_length]
+        self.win_length = win_length
+
+    def get_batch(self, batch_indices):
+        return self.data[batch_indices]
+
+    def __len__(self):
+        return self.n_windows
+
+    def __getitem__(self, idx):
+        return self.data[idx]
+
 
 def load_binary_file(file_path, dtype=np.uint32):
     """
@@ -152,18 +205,23 @@ def find_file(target,specific_subdir=""):
     return file_path
 
 
-def find_files(dataset_name, channel, pos_prefix="_bis", differenciate=True,file_suffix="",specific_subdir=""):
+def find_files(data_name,pos_name, channel, pos_prefix="_bis", differenciate=True,file_suffix="",specific_subdir=""):
     modif = "_dif" if differenciate else ""
-    target = dataset_name + f"_{channel:03}_???{modif}.bin{file_suffix}"
+    target = data_name + f"_{channel:03}_???{modif}.bin{file_suffix}"
     file_path = find_file(target, specific_subdir)
-    target_pos = dataset_name + f"_{channel:03}_???{pos_prefix}.pos"
+    target_pos = pos_name + f"_{channel:03}_???{pos_prefix}.pos"
     path_pos = find_file(target_pos, specific_subdir)
     return file_path,path_pos
 
 
 
-def create_data_sets(channel, win_length=2000, shift=0, pos_prefix="_bis", file_suffix= "", differenciate=False,
-                     specific_subdir="RUN9_pulse_injected_new/"):
+def create_data_sets(channel,
+                     dataset_dict={"data_name":["pup_n1-d8_000813_20230628T161508","pup_n1-d0_000813_20230628T161508"],
+                                   "pos_name": ["pup_n1-d8_000813_20230628T161508","pup_n1-d0_000813_20230628T161508"],
+                                   "specific_subdir":["RUN9_pulse_injected_new/","RUN9_pulse_injected_new/"],
+                                   "full_info":[True,False]},
+                     win_length=2000, shift=0, pos_prefix="_bis", file_suffix= "", differenciate=False,
+                     len_data = 15000, cached = False, **kwargs):
     """
     Creates datasets for single and pileup data, along with additional processed information.
 
@@ -183,32 +241,29 @@ def create_data_sets(channel, win_length=2000, shift=0, pos_prefix="_bis", file_
             - fracE_pileup (numpy.ndarray): Fractional energy for pileup data.
             - e_pileups (numpy.ndarray): Energy values for pileup data.
     """
-    dataset_pileup_name = "pup_n1-d8_000813_20230628T161508"
-    file_path_pileup,path_pos_pileup = find_files(dataset_pileup_name, channel,
+    dataset_class = CachedBinaryDataset if cached else BinaryDataset
+    datas =[]
+    parameters = []
+    for data_name,pos_name,specific_subdir,full_info in zip(dataset_dict["data_name"],
+                                                            dataset_dict["pos_name"],
+                                                            dataset_dict["specific_subdir"],
+                                                            dataset_dict["full_info"]):
+        file_path,pos_path = find_files(data_name,pos_name, channel,
                                                   pos_prefix = pos_prefix, differenciate = differenciate,
                                                   file_suffix=file_suffix,
                                                   specific_subdir=specific_subdir)
-    # Load pileup positions and process
-    pos_file_pileup = np.loadtxt(path_pos_pileup)[:15000]
-    dt_pileup = pos_file_pileup[:, -1]
-    r_pileup = pos_file_pileup[:, 2]/(pos_file_pileup[:, 2] + pos_file_pileup[:, 1])
-    e_pileups = pos_file_pileup[:, 1:3]
-    positions_pileup = (pos_file_pileup[:, 0] // 4).astype(int)
+        pos_file = np.loadtxt(pos_path)[:len_data]
+        positions = (pos_file[:, 0] // 4).astype(int)
+        data = dataset_class(file_path, win_length, positions, win_shift=win_length // 2 - shift,
+                                    **kwargs)
+        datas.append(data)
+        if full_info:
+            dt= pos_file[:, -1]
+            r = pos_file[:, 2] / (pos_file[:, 2] + pos_file[:, 1])
+            e = pos_file[:, 1:3]
+            parameters.append({"dt":dt, "r":r, "e":e})
 
-    # Create BinaryDataset for pileup data
-    data_pileup = BinaryDataset(file_path_pileup, win_length, positions_pileup, win_shift=win_length // 2 - shift)
-
-    dataset_single_name = "pup_n1-d0_000813_20230628T161508"
-    file_path_single, path_pos_single = find_files(dataset_single_name, channel,
-                                                  pos_prefix = pos_prefix, differenciate = differenciate,
-                                                  file_suffix=file_suffix,
-                                                  specific_subdir=specific_subdir)
-    # Load single positions and create BinaryDataset
-    pos_file_single = np.loadtxt(path_pos_single)[:15000]
-    positions_single = (pos_file_single[:, 0] // 4).astype(int)
-    data_single = BinaryDataset(file_path_single, win_length, positions_single, win_shift=win_length // 2 - shift)
-
-    return data_single, data_pileup, dt_pileup, r_pileup, e_pileups
+    return *datas, parameters
 
 def create_data_sets_denoise(channel, win_length=2000, shift=0, pos_prefix="_bis", file_suffix= "", differenciate=False,
                      specific_subdir="RUN9_pulse_injected_new/"):
@@ -266,6 +321,18 @@ def create_data_sets_denoise(channel, win_length=2000, shift=0, pos_prefix="_bis
                                         win_shift = win_length // 2 - shift)
     return data_single, data_pileup
 
+
+def compute_H(meanpulse,nps,window_fct):
+    size = len(nps)
+    S = np.fft.fft(meanpulse * window_fct(size))
+    freq = np.fft.fftfreq(size, 1e-4)
+    w = 2 * np.pi * freq
+    # Compute filter response and normalize it
+    H = np.conj(S) / nps
+    H_unit = H / np.mean(np.abs(H * S))
+    return S,w,H_unit
+
+
 def get_channel_specs(channel, n_deriv=1, window_fct=np.ones,nps_name="raw_noise"):
     """
     Loads and processes filter data for a given channel.
@@ -298,15 +365,8 @@ def get_channel_specs(channel, n_deriv=1, window_fct=np.ones,nps_name="raw_noise
         dmeanpulse = np.pad(dmeanpulse, (0, size - len(dmeanpulse)), 'constant')
     dmeanpulse /= np.max(np.abs(dmeanpulse))
     # Perform Fourier transform and compute angular frequency
-    S = np.fft.fft(dmeanpulse*window_fct(size))
-    freq = np.fft.fftfreq(size, 1e-4)
-    w = 2 * np.pi * freq
-
-    # Compute filter response and normalize it
-    H = np.conj(S) / nps
-    H_unit = H / np.mean(np.abs(H * S))
-
-    return H_unit, S, nps, w, pulse_factor
+    S, w, H_unit = compute_H(dmeanpulse,nps,window_fct)
+    return H_unit, S, nps, w, pulse_factor, dmeanpulse
 
 
 def load_params_simu(filename):
