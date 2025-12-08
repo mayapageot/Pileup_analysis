@@ -112,6 +112,7 @@ class CachedBinaryDataset(Dataset):
         header = read_bin_header(file_path)
         self.samplingRate = header["samplingRate"]
         self.adcRange = header["adcRange"]
+        self.win_shift = int(win_shift)
 
         # Load full file into memory (skip first 4 bytes)
         full_raw = np.fromfile(file_path, dtype=dtype)[1:]
@@ -139,12 +140,14 @@ class CachedBinaryDataset(Dataset):
         if device == "cuda":
             self.data = self.data.cuda(non_blocking=True)
 
-    def set_win_length(self, win_length):
+    def set_win_length(self, win_length,win_shift=0):
         win_length = int(win_length)
-        if win_length > self.win_length:
+        start = self.win_shift - win_shift
+        if start + win_length > self.win_length:
             raise ValueError(f"Requested window length {win_length} exceeds max length {self.full_data.shape[1]}")
-        self.data = self.data[:, :win_length]
+        self.data = self.data[:, start:start+win_length]
         self.win_length = win_length
+        self.win_shift = win_shift
 
     def get_batch(self, batch_indices):
         return self.data[batch_indices]
@@ -216,10 +219,10 @@ def find_files(data_name,pos_name, channel, pos_prefix="_bis", differenciate=Tru
 
 
 def create_data_sets(channel,
-                     dataset_dict={"data_name":["pup_n1-d8_000813_20230628T161508","pup_n1-d0_000813_20230628T161508"],
-                                   "pos_name": ["pup_n1-d8_000813_20230628T161508","pup_n1-d0_000813_20230628T161508"],
+                     dataset_dict={"data_name":["pup_n1-d0_000813_20230628T161508","pup_n1-d8_000813_20230628T161508"],
+                                   "pos_name": ["pup_n1-d0_000813_20230628T161508","pup_n1-d8_000813_20230628T161508"],
                                    "specific_subdir":["RUN9_pulse_injected_new/","RUN9_pulse_injected_new/"],
-                                   "full_info":[True,False]},
+                                   "full_info":[False,True]},
                      win_length=2000, shift=0, pos_prefix="_bis", file_suffix= "", differenciate=False,
                      len_data = 15000, cached = False, **kwargs):
     """

@@ -443,6 +443,11 @@ def get_PSD_interpole_torch(dataset, H_unit, f1, f2,
     fine_x = torch.arange(-interpolation_range, interpolation_range + 1, 0.05,
                           device = device, dtype = torch.float32)
 
+    # windowing
+    window = window_fct(win_len)
+    if not torch.is_tensor(window):
+        window = torch.tensor(window, device=device, dtype=torch.float32)
+
     for pulses in loader:
         if isinstance(pulses, (list, tuple)):
             pulses = pulses[0]
@@ -460,10 +465,6 @@ def get_PSD_interpole_torch(dataset, H_unit, f1, f2,
         if n_deriv > 0:
             pulses = pulses.diff(n=n_deriv, dim=-1, prepend=torch.zeros((pulses.shape[0], n_deriv), device=device))
 
-        # windowing
-        window = window_fct(pulses.shape[1])
-        if not torch.is_tensor(window):
-            window = torch.tensor(window, device=device, dtype=pulses.dtype)
         pulses = pulses * window
 
         n_rows, n_cols = pulses.shape
@@ -547,6 +548,100 @@ def create_NPS(dataset, filter=None, n_deriv = 0, filter_prederiv=None,rms_thr =
         count += 1
     nps = nps_accum / count
     return nps
+
+def create_NPS_torch(dataset,
+                     filter=None,
+                     n_deriv=0,
+                     filter_prederiv=None,
+                     rms_thr=0.0005,
+                     batch_size=128,
+                     window_fct=torch.ones,
+                     use_loader=True,
+                     device="cuda"):
+    """
+    Fully GPU-accelerated Noise Power Spectrum (NPS) computation.
+    """
+
+    # Prepare filter
+    win_len = dataset.win_length
+    device = torch.device(device)
+
+    if filter is None:
+        filter = torch.ones(win_len, device=device, dtype=torch.float32)
+    else:
+        filter = torch.tensor(filter, device=device, dtype=torch.float32)
+
+    # Pre-derivative filter (freq-domain)
+    if filter_prederiv is not None:
+        filter_prederiv = torch.tensor(filter_prederiv,
+                                       device=device,
+                                       dtype=torch.complex64)
+
+    # windowing
+    window = window_fct(win_len)
+    if not torch.is_tensor(window):
+        window = torch.tensor(window, device=device, dtype=torch.float32)
+
+    # Batch iterator (same helper as PSD)
+    loader = batch_iterator(dataset,
+                            batch_size=batch_size,
+                            device="cpu",  # pulses come to GPU later
+                            use_loader=use_loader)
+
+    nps_accum = None
+    count = 0
+
+    for pulses in loader:
+        # Allow dataset returning (pulses, label)
+        if isinstance(pulses, (list, tuple)):
+            pulses = pulses[0]
+
+        pulses = pulses.to(device, dtype=torch.float32)
+
+        # ======== FILTER BEFORE DIFF (F-domain pre-filter) ========
+        if filter_prederiv is not None:
+            fp = torch.fft.fft(pulses, dim=-1)
+            pulses = torch.fft.ifft(fp * filter_prederiv, dim=-1).real
+
+        # ======== RMS THRESHOLD FILTERING ========
+        rms = pulses.std(dim=-1)
+        mask = rms < rms_thr
+        pulses = pulses[mask]
+        if pulses.numel() == 0:
+            continue
+
+        # ======== REMOVE BASELINE ========
+        pulses = pulses - pulses.mean(dim=-1, keepdim=True)
+
+        # ======== N-th DERIVATIVE ========
+        if n_deriv > 0:
+            zeros = torch.zeros((pulses.shape[0], n_deriv),
+                                device=device, dtype=pulses.dtype)
+            padded = torch.cat([zeros, pulses], dim=-1)
+            pulses = padded.diff(n=n_deriv, dim=-1)
+
+        # ======== APPLY WINDOW ========
+        pulses = pulses * window
+
+        # ======== FFT ========
+        fpulse = torch.fft.fft(pulses, dim=-1)
+
+        # ======== POWER SPECTRUM ========
+        nps_batch = torch.mean(torch.abs(filter * fpulse)**2, dim=0)
+
+        # Accumulate
+        if nps_accum is None:
+            nps_accum = nps_batch
+        else:
+            nps_accum += nps_batch
+
+        count += 1
+
+    # ======== FINAL AVERAGE ========
+    nps = nps_accum / count
+    return nps.detach().cpu().numpy()
+
+
 
 def compute_BI(data_pileup, data_single, acceptance, H_unit, f1_opt, f2_opt, window_fct = np.hanning,n_deriv = 0, full_output = False):
     PSD_pileup, Amp_1_pileup, Amp_2_pileup = get_PSD_interpole(data_pileup, H_unit, f1_opt, f2_opt,
