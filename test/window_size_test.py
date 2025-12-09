@@ -18,9 +18,10 @@ print("Using device:", device)
 StdCuts = [0.0003, 0.0004, 0.0008, 0.0006, 0.0012, 0.0007, 0.00035, 0.0025]
 channels = [11, 13, 15]  # channels to process
 channels = [3, 5, 9, 11, 13, 15, 17, 19]
-# channels = [3]
+channels = [11]
 for channel, StdCut in zip(channels, StdCuts):
-    window_sizes = [2 ** 13 - 6 * 2 ** 9 - i * 2 ** 8 for i in range(20)]
+    window_sizes = [2 ** 13 - 6 * 2 ** 9 - i * 2 ** 8 + 5*2 ** 10 for i in range(40)]
+    # window_sizes = [2 ** 13 - 6 * 2 ** 9 - i * 2 ** 10 + 5*2 ** 10 for i in range(10)]
     data_single, data_pileup, _ = ds.create_data_sets(channel, win_length=window_sizes[0], shift=0, pos_prefix="_bis",
                                                       len_data=2 ** 13 + 2 ** 12, cached=True)
     data_noise, _ = ds.create_data_sets(channel, {"data_name": ["000813_20230628T161508"],
@@ -50,7 +51,7 @@ for channel, StdCut in zip(channels, StdCuts):
 
     meanpulse = np.fromfile(ds.find_file(f"{meas_name}_{channel:03}_???.bin_edmean.bin",
                                          specific_subdir="RUN9_pulse_injected_new/"))
-    meanpulse = np.pad(meanpulse, (2000, 2000), 'constant', constant_values=0)
+    meanpulse = np.pad(meanpulse, (4000, 4000), 'constant', constant_values=0)
 
     f1_opt, f2_opt = np.load(
         f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance * 100):d}_d0.npy")
@@ -68,8 +69,11 @@ for channel, StdCut in zip(channels, StdCuts):
     for window_size in window_sizes:
         data_single.set_win_length(window_size, win_shift=window_size // 2)
         data_pileup.set_win_length(window_size, win_shift=window_size // 2)
+        data_noise.set_win_length(window_size, win_shift=window_size // 2)
         w = np.fft.fftfreq(window_size, 1e-4) * 2 * np.pi
-        nps_bis = nps_inter(w)
+        # nps_bis = nps_inter(w)
+        nps_bis = an.create_NPS_torch(data_noise,n_deriv=0,rms_thr=StdCut, batch_size=2048, window_fct=np.hanning,
+                                      use_loader=False,device=device)
         meanpulse_bis = meanpulse[np.argmax(meanpulse) - window_size // 2: np.argmax(meanpulse) + window_size // 2]
         S, w, H_unit = ds.compute_H(meanpulse_bis, nps_bis, np.hanning)
         # Convert all arrays to torch tensors on GPU
@@ -80,15 +84,20 @@ for channel, StdCut in zip(channels, StdCuts):
         nps_torch = torch.tensor(nps_bis, dtype=torch.cfloat, device=device)
         signal_amp_torch = torch.tensor(signal_amp, dtype=torch.float32, device=device)
 
-        # f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
-        #                                                signal_amp_torch, ratio_distribution_torch, N_sigma=N_sigma,
-        #                                                n_trials=500, verbose=True)
+        f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
+                                                       signal_amp_torch, ratio_distribution_torch, N_sigma=N_sigma,
+                                                       n_trials=500, verbose=False)
+        np.save(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/"
+                f"functions_eff{int(acceptance*100):d}_window_{int(window_size):d}",
+                np.array([f1_opt, f2_opt]))
+        f1_t = torch.tensor(f1_opt, dtype=torch.float32, device=device)
+        f2_t = torch.tensor(f2_opt, dtype=torch.float32, device=device)
+        # f1_t = torch.tensor(f1_opt_inter(w), dtype=torch.float32, device=device)
+        # f2_t = torch.tensor(f2_opt_inter(w), dtype=torch.float32, device=device)
 
         S_H_delayed, S_H, S2_over_nps = an.precompute_constants(S_torch, H_unit_torch, w_torch, t_torch, nps_torch)
 
-        f1_t = torch.tensor(f1_opt_inter(w), dtype=torch.float32, device=device)
         f1_t /= torch.mean(f1_t * S_H).real
-        f2_t = torch.tensor(f2_opt_inter(w), dtype=torch.float32, device=device)
         f2_t /= torch.mean(f2_t * S_H).real
 
         J = an.compute_J(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
