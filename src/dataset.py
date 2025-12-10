@@ -118,7 +118,10 @@ class CachedBinaryDataset(Dataset):
         self.win_shift = int(win_shift)
 
         # Load full file into memory (skip first 4 bytes)
-        full_raw = np.fromfile(file_path, dtype = dtype)[1:]
+        full_raw = np.memmap(file_path, dtype = dtype, mode = 'r')
+
+        # Skip the first entry like before:
+        full_raw = full_raw[1:]
 
         # Apply shift
         starts = positions.astype(np.int64) - win_shift
