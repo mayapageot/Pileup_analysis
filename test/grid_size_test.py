@@ -11,15 +11,21 @@ import torch
 from torch.utils.data import DataLoader
 from scipy.interpolate import interp1d
 from scipy.stats import norm
+import os
 # Ensure we have GPU available
 BASE = Path(__file__).resolve().parent.parent
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 StdCuts = [0.0003, 0.0004, 0.0008, 0.0006, 0.0012, 0.0007, 0.00035, 0.0025]
-channels = [11, 13, 15]  # channels to process
 channels = [3, 5, 9, 11, 13, 15, 17, 19]
-channels = [11]
+# channels = [11, 13, 15]
+# channels = [11]
 grid_Ns = [i*10 for i in range(1,20)]
+
+BIs = []
+rps = []
+Js = []
+channel_data = []
 
 for channel, StdCut in zip(channels, StdCuts):
     window_size = 4096
@@ -46,16 +52,16 @@ for channel, StdCut in zip(channels, StdCuts):
                                                        window_fct=np.hanning)  # , nps_name="denoised_noise"
     signal_amp = ds.get_amp_Q_val(channel) * pulse_factor
 
+    nps_bis = an.create_NPS_torch(data_noise, n_deriv=0, rms_thr=StdCut, batch_size=2048, window_fct=np.hanning,
+                                  use_loader=False, device=device)
 
     meanpulse = np.fromfile(ds.find_file(f"{meas_name}_{channel:03}_???.bin_edmean.bin",
                                          specific_subdir="RUN9_pulse_injected_new/"))
     meanpulse = np.pad(meanpulse, (4000, 4000), 'constant', constant_values=0)
-
-    w = np.fft.fftfreq(window_size, 1e-4) * 2 * np.pi
-    nps_bis = an.create_NPS_torch(data_noise, n_deriv=0, rms_thr=StdCut, batch_size=2048, window_fct=np.hanning,
-                                  use_loader=False, device=device)
     meanpulse_bis = meanpulse[np.argmax(meanpulse) - window_size // 2: np.argmax(meanpulse) + window_size // 2]
+
     S, w, H_unit = ds.compute_H(meanpulse_bis, nps_bis, np.hanning)
+
     # Convert all arrays to torch tensors on GPU
     N_sigma = norm.ppf(1 - (1 - acceptance) * 100 / 100)
     S_torch = torch.tensor(S, dtype=torch.cfloat, device=device)
@@ -64,16 +70,6 @@ for channel, StdCut in zip(channels, StdCuts):
     nps_torch = torch.tensor(nps_bis, dtype=torch.cfloat, device=device)
     signal_amp_torch = torch.tensor(signal_amp, dtype=torch.float32, device=device)
 
-    f1_opt, f2_opt = np.load(
-        f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance * 100):d}_d0.npy")
-    f1_opt_inter, f2_opt_inter = (
-    interp1d(np.fft.fftfreq(len(f1_opt), 1e-4) * 2 * np.pi, f1_opt, fill_value="extrapolate"),
-    interp1d(np.fft.fftfreq(len(f2_opt), 1e-4) * 2 * np.pi, f2_opt, fill_value="extrapolate"))
-    nps_inter = interp1d(np.fft.fftfreq(len(nps), 1e-4) * 2 * np.pi, nps, fill_value="extrapolate")
-
-    BIs = []
-    rps = []
-    Js = []
     for grid_N in grid_Ns:
         t_min, t_max, N_t = 0, 8e-4, grid_N
         r_min, r_max, N_r = 0., .5, grid_N
@@ -88,17 +84,17 @@ for channel, StdCut in zip(channels, StdCuts):
         f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
                                                        signal_amp_torch, ratio_distribution_torch, N_sigma=N_sigma,
                                                        n_trials=500, verbose=False)
-        np.save(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/"
+        directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/N_grid/"
+        os.makedirs(directory_path, exist_ok=True)
+        np.save(directory_path +
                 f"functions_eff{int(acceptance*100):d}_N_grid_{int(grid_N):d}",
                 np.array([f1_opt, f2_opt]))
-        np.save(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/"
+        np.save(directory_path +
                 f"J_{int(acceptance*100):d}_N_grid_{int(grid_N):d}",
                 np.array(J_values))
 
         f1_t = torch.tensor(f1_opt, dtype=torch.float32, device=device)
         f2_t = torch.tensor(f2_opt, dtype=torch.float32, device=device)
-        # f1_t = torch.tensor(f1_opt_inter(w), dtype=torch.float32, device=device)
-        # f2_t = torch.tensor(f2_opt_inter(w), dtype=torch.float32, device=device)
 
         S_H_delayed, S_H, S2_over_nps = an.precompute_constants(S_torch, H_unit_torch, w_torch, t_torch, nps_torch)
 
@@ -125,19 +121,22 @@ for channel, StdCut in zip(channels, StdCuts):
         BIs.append(float(BI))
         rps.append(float(rp))
         Js.append(float(J))
-    BIs = np.array(BIs)
-    rps = np.array(rps)
-    Js = np.array(Js)
-    data = np.column_stack([grid_Ns, BIs, 1 - rps, Js])
+        channel_data.append(channel)
 
-    header = "grid_N,BI,1-rp,J"
 
-    np.savetxt(
-        f"/feynman/home/dphp/mp274748/Pileup_Analysis/outputs/Systematics/BI_channel_{channel}_varying_grid_size.csv",
-        data,
-        delimiter=",",
-        header=header,
-        comments=""
-    )
+BIs = np.array(BIs)
+rps = np.array(rps)
+Js = np.array(Js)
+channel_data = np.array(channel_data)
+data = np.column_stack([channel_data, grid_Ns, BIs, 1 - rps, Js])
 
-    print(data)
+header = "channel,grid_N,BI,1-rp,J"
+
+np.savetxt(
+    f"{BASE}/outputs/Systematics/BI_varying_grid_size.csv",
+    data,
+    delimiter=",",
+    header=header,
+    comments=""
+)
+print("Results saved to outputs/Systematics/BI_varying_grid_size.csv")
