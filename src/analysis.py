@@ -830,3 +830,162 @@ def compute_BI_uncertainty_torch(PSD_single: torch.Tensor,
     sigma_BI = K * sigma_rp
 
     return sigma_rp, sigma_BI
+
+
+def align_waveforms(pulses, shift):
+    """
+    Vectorized version: shift pulses along the time axis WITHOUT circular wrap-around.
+    pulses: (N, L)
+    shift: (N,) tensor of integer shifts (positive = right)
+    """
+    N, L = pulses.shape
+    aligned = torch.zeros_like(pulses)
+
+    # Create index grid
+    idx = torch.arange(L, device = pulses.device).unsqueeze(0).repeat(N, 1)  # (N, L)
+    # Compute shifted indices
+    shifted_idx = idx - shift.unsqueeze(1)  # (N, L)
+
+    # Mask valid indices
+    mask = (shifted_idx >= 0) & (shifted_idx < L)
+    shifted_idx_clipped = torch.clamp(shifted_idx, 0, L - 1)
+
+    # Fill aligned pulses
+    aligned[mask] = pulses[torch.arange(N, device = pulses.device).unsqueeze(1).repeat(1, L)[mask],
+    shifted_idx_clipped[mask]]
+    return aligned
+
+
+def build_mean_pulse(dataset, rms_thr, batch_size = 2048, device = "cpu", use_loader = False):
+    pulse_start_pos, pulse_end_pos = -100, 400
+    win_length = dataset.win_length
+    loader = batch_iterator(dataset, batch_size = batch_size, device = 'cpu', use_loader = use_loader)
+    target_index = win_length // 2
+    baseline_length = win_length // 2 + pulse_start_pos
+
+    mean_pulse = torch.zeros(win_length, dtype = torch.float32)
+    total_count = 0
+    for pulses in loader:
+        if isinstance(pulses, (list, tuple)):
+            pulses = pulses[0]
+        pulses = pulses.to(device, dtype = torch.float32)
+        # ----------------------------------------
+        # 1. Select pulses based on noise baseline
+        # ----------------------------------------
+        baseline_raw = torch.cat((
+            pulses[:, :baseline_length],
+            pulses[:, win_length // 2 + pulse_end_pos:]
+        ), dim = 1)
+
+        sel = torch.std(baseline_raw, dim = -1) < rms_thr
+        pulses_sel = pulses[sel]
+        if pulses_sel.shape[0] == 0:
+            continue
+
+        # ----------------------------------------
+        # 2. Subtract baseline
+        # ----------------------------------------
+        baseline = pulses_sel[:, :baseline_length].mean(dim = 1)
+        pulses_clean = pulses_sel - baseline[:, None]
+
+        # ----------------------------------------
+        # 3. Align pulses by their maximum
+        # ----------------------------------------
+        max_pos = torch.argmax(pulses_clean, dim = 1)
+        shifts = target_index - max_pos
+
+        pulses_aligned = align_waveforms(pulses_clean, shifts)
+
+        # ----------------------------------------
+        # 4. Normalize so max = 1 for every pulse
+        # ----------------------------------------
+        max_val = pulses_aligned.max(dim = 1).values
+        pulses_norm = pulses_aligned / max_val[:, None]
+
+        # ----------------------------------------
+        # 5. Accumulate weighted mean
+        # ----------------------------------------
+        mean_pulse += pulses_norm.sum(dim = 0)
+        total_count += pulses_norm.shape[0]
+
+    # final average
+    mean_pulse /= total_count
+    return mean_pulse
+
+def build_mean_pulse_filteralignement(dataset, rms_thr,H , batch_size = 2048, device = "cpu", use_loader = False):
+    pulse_start_pos, pulse_end_pos = -100, 400
+    win_length = dataset.win_length
+    loader = batch_iterator(dataset, batch_size = batch_size, device = 'cpu', use_loader = use_loader)
+    target_index = win_length // 2
+    baseline_length = win_length // 2 + pulse_start_pos
+    jitter_max = 4
+    mean_pulse = torch.zeros(win_length, dtype = torch.float32)
+    total_count = 0
+
+    interpolation_range = 5
+    # prepare fine X grid for interpolation
+    fine_x = torch.arange(-interpolation_range, interpolation_range + 1, 0.05,
+                          device = device, dtype = torch.float32)
+    for pulses in loader:
+        if isinstance(pulses, (list, tuple)):
+            pulses = pulses[0]
+        pulses = pulses.to(device, dtype = torch.float32)
+
+        # ----------------------------------------
+        # 1. Select pulses based on noise baseline
+        # ----------------------------------------
+        baseline_raw = torch.cat((
+            pulses[:, :baseline_length],
+            pulses[:, win_length // 2 + pulse_end_pos:]
+        ), dim = 1)
+
+        sel = torch.std(baseline_raw, dim = -1) < rms_thr
+        pulses_sel = pulses[sel]
+        if pulses_sel.shape[0] == 0:
+            continue
+        n_rows, n_cols = pulses_sel.shape
+        # ----------------------------------------
+        # 2. Subtract baseline
+        # ----------------------------------------
+        baseline = pulses_sel[:, :baseline_length].mean(dim = 1)
+        pulses_clean = pulses_sel - baseline[:, None]
+        # ----------------------------------------
+        # 3. Align pulses by their filtered maximum
+        # ----------------------------------------
+        fpulse = torch.fft.fft(pulses_clean, dim=-1)
+
+        # Peak search band
+        lo = n_cols // 2 - jitter_max
+        hi = n_cols // 2 + jitter_max
+        # Same for filter 2
+        filt = torch.fft.ifft(H * fpulse, dim = -1).real
+        filt = torch.roll(filt, shifts = n_cols // 2, dims = 1)
+
+        sub = filt[:, lo:hi]
+        max_idx = sub.argmax(dim = 1) + lo
+
+        # interpolation samples
+        offs = torch.arange(-interpolation_range, interpolation_range + 1, device = device)
+
+        idx = max_idx[:, None] + offs[None, :]
+        y = filt.gather(1, idx)
+        interp2 = cubic_interp1d_scipy(y, fine_x)
+        shift = fine_x[interp2.argmax(dim = 1)]
+
+        pulses_aligned = torch.fft.ifft(fpulse * np.exp(-1j * 2 * np.pi * shift[:, None] / win_length), dim = -1).real
+
+        # ----------------------------------------
+        # 4. Normalize so max = 1 for every pulse
+        # ----------------------------------------
+        max_val = pulses_aligned.max(dim = 1).values
+        pulses_norm = pulses_aligned / max_val[:, None]
+
+        # ----------------------------------------
+        # 5. Accumulate weighted mean
+        # ----------------------------------------
+        mean_pulse += pulses_norm.sum(dim = 0)
+        total_count += pulses_norm.shape[0]
+
+    # final average
+    mean_pulse /= total_count
+    return mean_pulse
