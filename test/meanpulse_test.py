@@ -85,7 +85,7 @@ for channel, StdCut in zip(channels, StdCuts):
     H_unit_torch = torch.tensor(H_unit, dtype = torch.cfloat, device = device)
     mean_pulse_filtered = an.build_mean_pulse_filteralignement(data_single, rms_thr = StdCut,
                                                                H = H_unit_torch, batch_size = 2048,
-                                                               device = device, use_loader = False)
+                                                               device = device, use_loader = False).cpu().numpy()
     S, w, H_unit = ds.compute_H(mean_pulse_filtered, nps_bis, np.hanning)
 
     # Convert all arrays to torch tensors on GPU
@@ -147,7 +147,7 @@ for channel, StdCut in zip(channels, StdCuts):
     rps.append(float(rp))
     Js.append(float(J))
     channel_data.append(channel)
-    break
+
 
 channel_data = np.array(channel_data)
 BIs = np.array(BIs)

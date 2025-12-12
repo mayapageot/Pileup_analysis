@@ -147,6 +147,8 @@ class CachedBinaryDataset(Dataset):
             self.data = self.data.cuda(non_blocking = True)
 
     def set_win_length(self, win_length, win_shift = 0):
+        if win_length == self.win_length and win_shift == self.win_shift:
+            return
         win_length = int(win_length)
         start = self.win_shift - win_shift
         if start + win_length > self.win_length:
@@ -182,7 +184,7 @@ class CachedBinaryDataset_withgenerated(CachedBinaryDataset):
             len_pulse = len(pulse)
             pulse_inter = interp1d(
                 np.arange(- len_pulse // 2, len_pulse // 2),
-                pulse, kind = 'quadratic', fill_value = 0.)
+                pulse, kind = 'quadratic', fill_value = 0., bounds_error = False)
         else:
             pulse_inter = lambda x: 0 * x
         if pos_file.shape[1] > 3:

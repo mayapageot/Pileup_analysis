@@ -856,136 +856,149 @@ def align_waveforms(pulses, shift):
     return aligned
 
 
-def build_mean_pulse(dataset, rms_thr, batch_size = 2048, device = "cpu", use_loader = False):
+def build_mean_pulse(dataset, rms_thr, batch_size=2048, device="cpu", use_loader=False):
+    """
+    Compute the mean normalized pulse waveform from a dataset.
+
+    Steps:
+        1. Select pulses whose baseline RMS is below `rms_thr`.
+        2. Subtract baseline from each pulse.
+        3. Align pulses by the position of their maximum amplitude.
+        4. Normalize each pulse so its maximum equals 1.
+        5. Accumulate and return the average pulse.
+
+    Args:
+        dataset: Dataset providing waveforms and a 'win_length' attribute.
+        rms_thr (float): RMS threshold for baseline noise filtering.
+        batch_size (int): Number of pulses per batch.
+        device (str): Device to perform computation on ("cpu" or "cuda").
+        use_loader (bool): If True, uses a PyTorch DataLoader; otherwise uses custom iterator.
+
+    Returns:
+        torch.Tensor: Mean normalized pulse of shape (win_length,).
+    """
     pulse_start_pos, pulse_end_pos = -100, 400
     win_length = dataset.win_length
-    loader = batch_iterator(dataset, batch_size = batch_size, device = 'cpu', use_loader = use_loader)
+    loader = batch_iterator(dataset, batch_size=batch_size, device='cpu', use_loader=use_loader)
     target_index = win_length // 2
     baseline_length = win_length // 2 + pulse_start_pos
 
-    mean_pulse = torch.zeros(win_length, dtype = torch.float32)
+    mean_pulse = torch.zeros(win_length, dtype=torch.float32, device=device)
     total_count = 0
+
     for pulses in loader:
         if isinstance(pulses, (list, tuple)):
             pulses = pulses[0]
-        pulses = pulses.to(device, dtype = torch.float32)
-        # ----------------------------------------
-        # 1. Select pulses based on noise baseline
-        # ----------------------------------------
+        pulses = pulses.to(device, dtype=torch.float32)
+
         baseline_raw = torch.cat((
             pulses[:, :baseline_length],
             pulses[:, win_length // 2 + pulse_end_pos:]
-        ), dim = 1)
+        ), dim=1)
 
-        sel = torch.std(baseline_raw, dim = -1) < rms_thr
+        sel = torch.std(baseline_raw, dim=-1) < rms_thr
         pulses_sel = pulses[sel]
         if pulses_sel.shape[0] == 0:
             continue
 
-        # ----------------------------------------
-        # 2. Subtract baseline
-        # ----------------------------------------
-        baseline = pulses_sel[:, :baseline_length].mean(dim = 1)
+        baseline = pulses_sel[:, :baseline_length].mean(dim=1)
         pulses_clean = pulses_sel - baseline[:, None]
 
-        # ----------------------------------------
-        # 3. Align pulses by their maximum
-        # ----------------------------------------
-        max_pos = torch.argmax(pulses_clean, dim = 1)
+        max_pos = torch.argmax(pulses_clean, dim=1)
         shifts = target_index - max_pos
 
         pulses_aligned = align_waveforms(pulses_clean, shifts)
 
-        # ----------------------------------------
-        # 4. Normalize so max = 1 for every pulse
-        # ----------------------------------------
-        max_val = pulses_aligned.max(dim = 1).values
+        max_val = pulses_aligned.max(dim=1).values
         pulses_norm = pulses_aligned / max_val[:, None]
 
-        # ----------------------------------------
-        # 5. Accumulate weighted mean
-        # ----------------------------------------
-        mean_pulse += pulses_norm.sum(dim = 0)
+        mean_pulse += pulses_norm.sum(dim=0)
         total_count += pulses_norm.shape[0]
 
-    # final average
     mean_pulse /= total_count
     return mean_pulse
 
-def build_mean_pulse_filteralignement(dataset, rms_thr,H , batch_size = 2048, device = "cpu", use_loader = False):
+
+def build_mean_pulse_filteralignement(dataset, rms_thr, H, batch_size=2048, device="cpu", use_loader=False):
+    """
+    Compute a mean pulse using frequency-domain filtering + sub-sample alignment.
+
+    Extra steps vs. `build_mean_pulse`:
+        - Apply filter H in the frequency domain.
+        - Search for peaks within a jitter window.
+        - Use cubic interpolation to estimate sub-sample peak position.
+        - Apply fractional-time shifting via Fourier shift theorem.
+
+    Args:
+        dataset: Dataset providing waveforms and a 'win_length' attribute.
+        rms_thr (float): RMS threshold for baseline noise filtering.
+        H (torch.Tensor): Frequency-domain filter of shape (win_length,).
+        batch_size (int): Number of pulses per batch.
+        device (str): Compute device.
+        use_loader (bool): Whether to use DataLoader.
+
+    Returns:
+        torch.Tensor: Mean filtered+aligned normalized pulse.
+    """
     pulse_start_pos, pulse_end_pos = -100, 400
     win_length = dataset.win_length
-    loader = batch_iterator(dataset, batch_size = batch_size, device = 'cpu', use_loader = use_loader)
+    loader = batch_iterator(dataset, batch_size=batch_size, device='cpu', use_loader=use_loader)
     target_index = win_length // 2
     baseline_length = win_length // 2 + pulse_start_pos
     jitter_max = 4
-    mean_pulse = torch.zeros(win_length, dtype = torch.float32)
+
+    mean_pulse = torch.zeros(win_length, dtype=torch.float32, device=device)
     total_count = 0
 
     interpolation_range = 5
-    # prepare fine X grid for interpolation
-    fine_x = torch.arange(-interpolation_range, interpolation_range + 1, 0.05,
-                          device = device, dtype = torch.float32)
+    fine_x = torch.arange(-interpolation_range, interpolation_range + 1, 0.05, device=device)
+
     for pulses in loader:
         if isinstance(pulses, (list, tuple)):
             pulses = pulses[0]
-        pulses = pulses.to(device, dtype = torch.float32)
+        pulses = pulses.to(device, dtype=torch.float32)
 
-        # ----------------------------------------
-        # 1. Select pulses based on noise baseline
-        # ----------------------------------------
         baseline_raw = torch.cat((
             pulses[:, :baseline_length],
             pulses[:, win_length // 2 + pulse_end_pos:]
-        ), dim = 1)
+        ), dim=1)
 
-        sel = torch.std(baseline_raw, dim = -1) < rms_thr
+        sel = torch.std(baseline_raw, dim=-1) < rms_thr
         pulses_sel = pulses[sel]
         if pulses_sel.shape[0] == 0:
             continue
+
         n_rows, n_cols = pulses_sel.shape
-        # ----------------------------------------
-        # 2. Subtract baseline
-        # ----------------------------------------
-        baseline = pulses_sel[:, :baseline_length].mean(dim = 1)
+
+        baseline = pulses_sel[:, :baseline_length].mean(dim=1)
         pulses_clean = pulses_sel - baseline[:, None]
-        # ----------------------------------------
-        # 3. Align pulses by their filtered maximum
-        # ----------------------------------------
+
         fpulse = torch.fft.fft(pulses_clean, dim=-1)
 
-        # Peak search band
         lo = n_cols // 2 - jitter_max
         hi = n_cols // 2 + jitter_max
-        # Same for filter 2
-        filt = torch.fft.ifft(H * fpulse, dim = -1).real
-        filt = torch.roll(filt, shifts = n_cols // 2, dims = 1)
+
+        filt = torch.fft.ifft(H * fpulse, dim=-1).real
+        filt = torch.roll(filt, shifts=n_cols // 2, dims=1)
 
         sub = filt[:, lo:hi]
-        max_idx = sub.argmax(dim = 1) + lo
+        max_idx = sub.argmax(dim=1) + lo
 
-        # interpolation samples
-        offs = torch.arange(-interpolation_range, interpolation_range + 1, device = device)
-
+        offs = torch.arange(-interpolation_range, interpolation_range + 1, device=device)
         idx = max_idx[:, None] + offs[None, :]
         y = filt.gather(1, idx)
+
         interp2 = cubic_interp1d_scipy(y, fine_x)
-        shift = fine_x[interp2.argmax(dim = 1)]
+        shift = fine_x[interp2.argmax(dim=1)]
 
-        pulses_aligned = torch.fft.ifft(fpulse * np.exp(-1j * 2 * np.pi * shift[:, None] / win_length), dim = -1).real
+        phase = torch.exp(-1j * 2 * np.pi * shift[:, None] / win_length)
+        pulses_aligned = torch.fft.ifft(fpulse * phase, dim=-1).real
 
-        # ----------------------------------------
-        # 4. Normalize so max = 1 for every pulse
-        # ----------------------------------------
-        max_val = pulses_aligned.max(dim = 1).values
+        max_val = pulses_aligned.max(dim=1).values
         pulses_norm = pulses_aligned / max_val[:, None]
 
-        # ----------------------------------------
-        # 5. Accumulate weighted mean
-        # ----------------------------------------
-        mean_pulse += pulses_norm.sum(dim = 0)
+        mean_pulse += pulses_norm.sum(dim=0)
         total_count += pulses_norm.shape[0]
 
-    # final average
     mean_pulse /= total_count
     return mean_pulse
