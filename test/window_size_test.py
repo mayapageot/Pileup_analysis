@@ -20,6 +20,8 @@ StdCuts = [0.0003, 0.0004, 0.0008, 0.0006, 0.0012, 0.0007, 0.00035, 0.0025]
 channels = [3, 5, 9, 11, 13, 15, 17, 19]
 window_size_data = []
 channel_data = []
+
+BI_uncertainties, rp_uncertainties = [], []
 BIs = []
 rps = []
 Js = []
@@ -51,13 +53,7 @@ for channel, StdCut in zip(channels, StdCuts):
                                                   "full_info": [False]},
                                         win_length=window_sizes[0], shift=0, pos_prefix="_bis",
                                         len_data=2 ** 13 + 2 ** 12, cached=True)
-    nps = an.create_NPS_torch(data_noise,
-                              n_deriv=0,
-                              rms_thr=StdCut,
-                              batch_size=2048,
-                              window_fct=np.hanning,
-                              use_loader=False,
-                              device=device)
+
     _, _, _, _, pulse_factor, _ = ds.get_channel_specs(channel, n_deriv=n_deriv,
                                                        window_fct=np.hanning)  # , nps_name="denoised_noise"
     signal_amp = ds.get_amp_Q_val(channel) * pulse_factor
@@ -67,16 +63,28 @@ for channel, StdCut in zip(channels, StdCuts):
     ratio_distribution = pdf_ratio2b(np.linspace(r_min, r_max, N_r))
     ratio_distribution /= np.mean(ratio_distribution)
 
+    # nps = an.create_NPS_torch(data_noise,
+    #                           n_deriv=0,
+    #                           rms_thr=StdCut,
+    #                           batch_size=2048,
+    #                           window_fct=np.hanning,
+    #                           use_loader=False,
+    #                           device=device)
     # meanpulse = np.fromfile(ds.find_file(f"{meas_name}_{channel:03}_???.bin_edmean.bin",
     #                                      specific_subdir="RUN9_pulse_injected_new/"))
     # meanpulse = np.pad(meanpulse, (4000, 4000), 'constant', constant_values=0)
-    mean_pulse = an.build_mean_pulse(data_single, rms_thr=StdCut, batch_size=2048, device=device,
-                                     use_loader=False).cpu().numpy()
-    S, w, H_unit = ds.compute_H(mean_pulse, nps, np.hanning)
-    H_unit_torch = torch.tensor(H_unit, dtype=torch.cfloat, device=device)
-    meanpulse = an.build_mean_pulse_filteralignement(data_single, rms_thr=StdCut,
-                                                               H=H_unit_torch, batch_size=2048,
-                                                               device=device, use_loader=False).cpu().numpy()
+    # mean_pulse = an.build_mean_pulse(data_single, rms_thr=StdCut, batch_size=2048, device=device,
+    #                                  use_loader=False).cpu().numpy()
+    # S, w, H_unit = ds.compute_H(mean_pulse, nps, np.hanning)
+    # H_unit_torch = torch.tensor(H_unit, dtype=torch.cfloat, device=device)
+    # meanpulse = an.build_mean_pulse_filteralignement(data_single, rms_thr=StdCut,
+    #                                                            H=H_unit_torch, batch_size=2048,
+    #                                                            device=device, use_loader=False).cpu().numpy()
+    # directory_path = f"{BASE}/outputs/meanpulses_build/"
+    # os.makedirs(directory_path, exist_ok=True)
+    # np.save(f"{directory_path}/channel{channel}_meanpulse_build_from_fit.npy"
+    #         ,meanpulse)
+    meanpulse = np.load(f"{BASE}/outputs/meanpulses_build/channel{channel}_meanpulse_build_from_fit.npy")
     meanpulse = np.pad(meanpulse, (4000, 4000), 'constant', constant_values=0)
     t_torch = torch.linspace(t_min, t_max, N_t, dtype=torch.cfloat, device=device)
     r_torch = torch.linspace(r_min, r_max, N_r, dtype=torch.cfloat, device=device)
@@ -128,7 +136,7 @@ for channel, StdCut in zip(channels, StdCuts):
         J = an.compute_J(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
                          N_sigma=N_sigma)
 
-        BI, rp, PSD_pileup, PSD_single, Amp_1_pileup, Amp_2_pileup, Amp_1_single, Amp_2_single = an.compute_BI_torch(
+        BI, rp, sigma_rp, sigma_BI = an.compute_BI_torch(
             data_pileup,
             data_single,
             acceptance,
@@ -137,25 +145,28 @@ for channel, StdCut in zip(channels, StdCuts):
             f2_t,
             window_fct=np.hanning,
             n_deriv=0,
-            full_output=True,
+            compute_uncertainty=True,
             batch_size=2048 * 2,
             use_loader=False
         )
         # print(f"Channel {channel}, window size {window_size}, J: {J:.4e}, 1-rp: {1 - rp:.4f}, BI: {BI:.4e}")
         BIs.append(float(BI))
+        BI_uncertainties.append(float(sigma_BI))
         rps.append(float(rp))
+        rp_uncertainties.append(float(sigma_rp))
         Js.append(float(J))
         channel_data.append(channel)
         window_size_data.append(window_size)
-
 BIs = np.array(BIs)
+BI_uncertainties = np.array(BI_uncertainties)
 rps = np.array(rps)
+rp_uncertainties = np.array(rp_uncertainties)
 Js = np.array(Js)
 channel_data = np.array(channel_data)
 window_size_data = np.array(window_size_data)
-data = np.column_stack([channel_data, window_size_data, BIs, 1 - rps, Js])
+data = np.column_stack([channel_data, window_size_data, BIs,BI_uncertainties, 1 - rps,rp_uncertainties, Js])
 
-header = "channel,window_size,BI,1-rp,J"
+header = "channel,window_size,BI, BI_err,1-rp,rp_err,J"
 
 np.savetxt(
     f"{BASE}/outputs/Systematics/BI_window_size.csv",

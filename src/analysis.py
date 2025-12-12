@@ -731,6 +731,7 @@ def compute_BI_torch(data_pileup,
                      K=None,
                      window_fct=torch.ones,
                      n_deriv=0,
+                     compute_uncertainty=False,
                      full_output=False,
                      **kwargs):
     """
@@ -767,7 +768,14 @@ def compute_BI_torch(data_pileup,
 
     rp = torch.mean((PSD_pileup < cut).to(dtype=PSD_pileup.dtype))  # fraction of pileup below cut
     BI = K * (1.0 - rp)
-
+    if compute_uncertainty:
+        sigma_rp, sigma_BI = compute_BI_uncertainty_torch(
+            PSD_single, PSD_pileup, acceptance, rp, K=K
+        )
+        if full_output:
+            return BI, rp,sigma_rp, sigma_BI, PSD_pileup, PSD_single, Amp_1_pileup, Amp_2_pileup, Amp_1_single, Amp_2_single
+        else:
+            return BI, rp, sigma_rp, sigma_BI
     if full_output:
         return BI, rp, PSD_pileup, PSD_single, Amp_1_pileup, Amp_2_pileup, Amp_1_single, Amp_2_single
     else:
