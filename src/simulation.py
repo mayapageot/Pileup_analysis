@@ -81,14 +81,14 @@ def simulate_frequency_pulses_fixed_dt_r(S, nps, w, dt ,r ,nsim=10000, seed=1234
     return fpulses, signal_freq, noise_freq
 
 
-def pulse_model(t, A, t0, tau_rise, tau_decay1, tau_decay2, p):
+def pulse_model(t, t0, tau_rise, tau_decay1, tau_decay2, p):
     """Pulse model with 1 rise time and 2 decay times."""
     t_shifted = t - t0
     pulse = np.zeros_like(t_shifted)
     mask = t_shifted >= 0
     rise = 1 - np.exp(-t_shifted[mask]/tau_rise)
     decay = p * np.exp(-t_shifted[mask]/tau_decay1) + (1-p) * np.exp(-t_shifted[mask]/tau_decay2)
-    pulse[mask] = A * rise * decay
+    pulse[mask] = rise * decay
     return pulse
 
 def bessel_filter_coeffs(order, fc, fs):
@@ -101,20 +101,38 @@ def bessel_filter_coeffs(order, fc, fs):
     b_d, a_d = bilinear(b_a, a_a, fs)
     return b_d, a_d
 
-def apply_bessel_to_pulse(t, pulse, fc=450, order=2, fs=1e4):
-    b_d, a_d = bessel_filter_coeffs(order, fc, fs)
-    filtered_pulse = lfilter(b_d, a_d, pulse)
-    return filtered_pulse
 
 def apply_bessel_to_pulse(t, pulse, fc=450, order=2, fs=1e4):
     b_d, a_d = bessel_filter_coeffs(order, fc, fs)
     filtered_pulse = lfilter(b_d, a_d, pulse)
     return filtered_pulse
 
-def filtered_pulse_model(t, A, t0, tau_rise, tau_decay1, tau_decay2, p, fc, order):
-    pulse = pulse_model(t, A, t0, tau_rise, tau_decay1, tau_decay2, p)
+def filtered_pulse_model(t, t0, tau_rise, tau_decay1, tau_decay2, p, A, fc, order):
+    pulse = pulse_model(t, t0, tau_rise, tau_decay1, tau_decay2, p)
     filtered_pulse = apply_bessel_to_pulse(t, pulse, fc=fc, order=order, fs=1e4)
+    filtered_pulse *= A / np.max(filtered_pulse)
     return filtered_pulse.real
+
+def pulse_pole_zero(t, amplitude, t0, zero, *poles):
+    t = np.asarray(t, dtype=float)
+    poles = np.asarray(poles, dtype=float)
+    tt = t - t0
+    f = np.zeros_like(tt)
+    mask = tt >= 0
+    tt = tt[mask]
+    diff = poles[:, None] - poles[None, :]
+    denom = np.prod(
+        np.where(np.eye(len(poles), dtype=bool), 1.0, diff),
+        axis=1
+    )
+    k = (poles - zero) / denom
+    expo = np.exp(poles[:, None] * tt[None, :])
+
+    f[mask] = np.sum(k[:, None] * expo, axis=0)
+    maxf = np.max(f)
+    if maxf != 0:
+        f = f / maxf
+    return amplitude * f
 
 if __name__ == "__main__":
     from torch.utils.data import TensorDataset

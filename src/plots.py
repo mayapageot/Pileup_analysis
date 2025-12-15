@@ -563,6 +563,23 @@ def plot_mp_freq_all_channel():
     plt.xlabel('Frequency (Hz)', fontdict = {'size': 14})
     plt.ylabel('Pulse Amplitude Spectrum |S(w)|', fontdict = {'size': 14})
     plt.show()
+def plot_meanpulse_fit(meanpulse, y, t):
+    fig,(ax1,ax2) = plt.subplots(2,1, figsize=(10,8), sharex=True, gridspec_kw={'height_ratios': [3, 1],'hspace':0})
+    ax1.plot(t, y, label="Transfer function model")
+    ax1.plot(t, meanpulse)
+    ax2.plot(t, meanpulse - y, label="Fit Residuals",marker='o',markersize=2,ls="")
+    plt.legend()
+def plot_meanpulse_fit_freq(meanpulse, y,axs=None):
 
+    (ax1,ax2) = plt.subplots(2,1, figsize=(10,8), sharex=True, gridspec_kw={'height_ratios': [3, 1],'hspace':0})[1] if axs is None else axs
+    freq = np.fft.rfftfreq(len(meanpulse),1e-4)
+    window = np.hanning(len(meanpulse))
+    fmp = np.abs(np.fft.rfft(window*meanpulse))
+    ax1.loglog(freq,fmp, label="Original mean pulse")
+    ffmp = np.abs(np.fft.rfft(window*y))
+    ax1.loglog(freq,ffmp, label="Fitted mean pulse")
+    ax2.semilogx(freq,ffmp - fmp, label="Fit Residuals",marker='o',markersize=2,ls="")
+    ax1.legend()
+    ax1.set_ylim(1e-4,1e2)
 if __name__ == "__main__":
     plot_m1_2_all_channel()
