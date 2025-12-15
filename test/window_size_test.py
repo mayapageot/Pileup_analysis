@@ -31,11 +31,20 @@ acceptance = 0.9
 n_deriv = 0
 meas_name = "000813_20230628T161508"
 for channel, StdCut in zip(channels, StdCuts):
-    window_sizes = [2 ** 13 - 6 * 2 ** 9 - i * 2 ** 8 + 5*2 ** 10 for i in range(40)]
+    window_sizes = [2 ** 13 - 6 * 2 ** 9 - i * 4 * 2 ** 8 + 5*2 ** 10 for i in range(10)]
     # window_sizes = [2 ** 13 - 6 * 2 ** 9 - i * 2 ** 10 + 5*2 ** 10 for i in range(10)]
-    fitted_pulse_function = np.fromfile(ds.find_file(f"ch{channel}_fit*.bin",
-                                                     specific_subdir="RUN9_pulse_injected_new/"))
-    fitted_pulse_function = np.pad(fitted_pulse_function, (4000, 4000), 'constant', constant_values=0)
+    # fitted_pulse_function = np.fromfile(ds.find_file(f"ch{channel}_fit*.bin",
+    #                                                  specific_subdir="RUN9_pulse_injected_new/"))
+    # fitted_pulse_function = np.pad(fitted_pulse_function, (4000, 4000), 'constant', constant_values=0)
+    meanpulse = np.fromfile(ds.find_file(f"{meas_name}_{channel:03}_???.bin_edmean.bin",
+                                         specific_subdir="RUN9_pulse_injected_new/"))
+    t = np.arange(-len(meanpulse) // 2, len(meanpulse) // 2) * 1e-4
+    p0 = [1, t[np.argmax(meanpulse)], -1000, -1339.1, -237.0, -100, -1000.0]
+    fit_fct_pole = lambda x, *params: sim.apply_bessel_to_pulse(x, sim.pulse_pole_zero(x, *params), fc=2500, order=6,
+                                                                fs=1e4)
+    popt, pcov = curve_fit(fit_fct_pole, t, meanpulse, p0=p0,
+                           bounds=([0, -0.5, -5000, -5000, -5000, -5000, -5000], [10, 0.5, 0, 0, 0, 0, 0]))
+    fitted_pulse_function = lambda t: fit_fct_pole(t*1e-4, *popt)
     dataset_single_name = "pup_n1-d0_000813_20230628T161508"
     file_path_single, path_pos_single = ds.find_files(meas_name, dataset_single_name, channel,
                                                       specific_subdir="RUN9_pulse_injected_new/")
@@ -65,38 +74,30 @@ for channel, StdCut in zip(channels, StdCuts):
     ratio_distribution = pdf_ratio2b(np.linspace(r_min, r_max, N_r))
     ratio_distribution /= np.mean(ratio_distribution)
 
-    # nps = an.create_NPS_torch(data_noise,
-    #                           n_deriv=0,
-    #                           rms_thr=StdCut,
-    #                           batch_size=2048,
-    #                           window_fct=np.hanning,
-    #                           use_loader=False,
-    #                           device=device)
-    # meanpulse = np.fromfile(ds.find_file(f"{meas_name}_{channel:03}_???.bin_edmean.bin",
-    #                                      specific_subdir="RUN9_pulse_injected_new/"))
-    # meanpulse = np.pad(meanpulse, (4000, 4000), 'constant', constant_values=0)
-    # mean_pulse = an.build_mean_pulse(data_single, rms_thr=StdCut, batch_size=2048, device=device,
-    #                                  use_loader=False).cpu().numpy()
-    # S, w, H_unit = ds.compute_H(mean_pulse, nps, np.hanning)
-    # H_unit_torch = torch.tensor(H_unit, dtype=torch.cfloat, device=device)
-    # meanpulse = an.build_mean_pulse_filteralignement(data_single, rms_thr=StdCut,
-    #                                                            H=H_unit_torch, batch_size=2048,
-    #                                                            device=device, use_loader=False).cpu().numpy()
-    # directory_path = f"{BASE}/outputs/meanpulses_build/"
-    # os.makedirs(directory_path, exist_ok=True)
-    # np.save(f"{directory_path}/channel{channel}_meanpulse_build_from_fit.npy"
-    #         ,meanpulse)
-    # meanpulse = np.load(f"{BASE}/outputs/meanpulses_build/channel{channel}_meanpulse_build_from_fit.npy")
-    # meanpulse = np.pad(meanpulse, (4000, 4000), 'constant', constant_values=0)
+    nps = an.create_NPS_torch(data_noise,
+                              n_deriv=0,
+                              rms_thr=StdCut,
+                              batch_size=2048,
+                              window_fct=np.hanning,
+                              use_loader=False,
+                              device=device)
     meanpulse = np.fromfile(ds.find_file(f"{meas_name}_{channel:03}_???.bin_edmean.bin",
-                                          specific_subdir = "RUN9_pulse_injected_new/"))
-    t = np.arange(-len(meanpulse) // 2, len(meanpulse) // 2) * 1e-4
-    p0 = [1, t[np.argmax(meanpulse)], -1000, -1339.1, -237.0, -100, -1000.0]
-    fit_fct_pole = lambda x, *params: sim.apply_bessel_to_pulse(t, sim.pulse_pole_zero(x, *params), fc=2500, order=6,
-                                                                fs=1e4)
-    popt, pcov = curve_fit(fit_fct_pole, t, meanpulse, p0=p0,
-                           bounds=([0, -0.5, -5000, -5000, -5000, -5000, -5000], [10, 0.5, 0, 0, 0, 0, 0]))
-    pulse_function = lambda t :fit_fct_pole(t, *popt)
+                                         specific_subdir="RUN9_pulse_injected_new/"))
+    meanpulse = np.pad(meanpulse, (4000, 4000), 'constant', constant_values=0)
+    mean_pulse = an.build_mean_pulse(data_single, rms_thr=StdCut, batch_size=2048, device=device,
+                                     use_loader=False).cpu().numpy()
+    S, w, H_unit = ds.compute_H(mean_pulse, nps, np.hanning)
+    H_unit_torch = torch.tensor(H_unit, dtype=torch.cfloat, device=device)
+    meanpulse = an.build_mean_pulse_filteralignement(data_single, rms_thr=StdCut,
+                                                               H=H_unit_torch, batch_size=2048,
+                                                               device=device, use_loader=False).cpu().numpy()
+    directory_path = f"{BASE}/outputs/meanpulses_build/"
+    os.makedirs(directory_path, exist_ok=True)
+    np.save(f"{directory_path}/channel{channel}_meanpulse_build_from_fit_4Pole_Bessel.npy"
+            ,meanpulse)
+    # meanpulse = np.load(f"{BASE}/outputs/meanpulses_build/channel{channel}_meanpulse_build_from_fit_4Pole_Bessel.npy")
+    meanpulse = np.pad(meanpulse, (4000, 4000), 'constant', constant_values=0)
+
     t_torch = torch.linspace(t_min, t_max, N_t, dtype=torch.cfloat, device=device)
     r_torch = torch.linspace(r_min, r_max, N_r, dtype=torch.cfloat, device=device)
     ratio_distribution_torch = torch.tensor(ratio_distribution, dtype=torch.cfloat, device=device)
@@ -109,8 +110,7 @@ for channel, StdCut in zip(channels, StdCuts):
         # nps_bis = nps_inter(w)
         nps_bis = an.create_NPS_torch(data_noise,n_deriv=0,rms_thr=StdCut, batch_size=2048, window_fct=np.hanning,
                                       use_loader=False,device=device)
-        # meanpulse_bis = meanpulse[np.argmax(meanpulse) - window_size // 2: np.argmax(meanpulse) + window_size // 2]
-        meanpulse_bis = pulse_function(np.arange(-window_size // 2, window_size // 2) * 1e-4)
+        meanpulse_bis = meanpulse[np.argmax(meanpulse) - window_size // 2: np.argmax(meanpulse) + window_size // 2]
         S, w, H_unit = ds.compute_H(meanpulse_bis, nps_bis, np.hanning)
         # Convert all arrays to torch tensors on GPU
         N_sigma = norm.ppf(1 - (1 - acceptance) * 100 / 100)
