@@ -6,11 +6,13 @@ import time
 import numpy as np
 import src.analysis as an
 import src.dataset as ds
+import src.simulation as sim
 from utility.double_beta_spectrum import pdf_ratio2b
 import torch
 from torch.utils.data import DataLoader
 from scipy.interpolate import interp1d
 from scipy.stats import norm
+from scipy.optimize import curve_fit
 import os
 # Ensure we have GPU available
 BASE = Path(__file__).resolve().parent.parent
@@ -84,8 +86,17 @@ for channel, StdCut in zip(channels, StdCuts):
     # os.makedirs(directory_path, exist_ok=True)
     # np.save(f"{directory_path}/channel{channel}_meanpulse_build_from_fit.npy"
     #         ,meanpulse)
-    meanpulse = np.load(f"{BASE}/outputs/meanpulses_build/channel{channel}_meanpulse_build_from_fit.npy")
-    meanpulse = np.pad(meanpulse, (4000, 4000), 'constant', constant_values=0)
+    # meanpulse = np.load(f"{BASE}/outputs/meanpulses_build/channel{channel}_meanpulse_build_from_fit.npy")
+    # meanpulse = np.pad(meanpulse, (4000, 4000), 'constant', constant_values=0)
+    meanpulse = np.fromfile(ds.find_file(f"{meas_name}_{channel:03}_???.bin_edmean.bin",
+                                          specific_subdir = "RUN9_pulse_injected_new/"))
+    t = np.arange(-len(meanpulse) // 2, len(meanpulse) // 2) * 1e-4
+    p0 = [1, t[np.argmax(meanpulse)], -1000, -1339.1, -237.0, -100, -1000.0]
+    fit_fct_pole = lambda x, *params: sim.apply_bessel_to_pulse(t, sim.pulse_pole_zero(x, *params), fc=2500, order=6,
+                                                                fs=1e4)
+    popt, pcov = curve_fit(fit_fct_pole, t, meanpulse, p0=p0,
+                           bounds=([0, -0.5, -5000, -5000, -5000, -5000, -5000], [10, 0.5, 0, 0, 0, 0, 0]))
+    pulse_function = lambda t :fit_fct_pole(t, *popt)
     t_torch = torch.linspace(t_min, t_max, N_t, dtype=torch.cfloat, device=device)
     r_torch = torch.linspace(r_min, r_max, N_r, dtype=torch.cfloat, device=device)
     ratio_distribution_torch = torch.tensor(ratio_distribution, dtype=torch.cfloat, device=device)
@@ -98,7 +109,8 @@ for channel, StdCut in zip(channels, StdCuts):
         # nps_bis = nps_inter(w)
         nps_bis = an.create_NPS_torch(data_noise,n_deriv=0,rms_thr=StdCut, batch_size=2048, window_fct=np.hanning,
                                       use_loader=False,device=device)
-        meanpulse_bis = meanpulse[np.argmax(meanpulse) - window_size // 2: np.argmax(meanpulse) + window_size // 2]
+        # meanpulse_bis = meanpulse[np.argmax(meanpulse) - window_size // 2: np.argmax(meanpulse) + window_size // 2]
+        meanpulse_bis = pulse_function(np.arange(-window_size // 2, window_size // 2) * 1e-4)
         S, w, H_unit = ds.compute_H(meanpulse_bis, nps_bis, np.hanning)
         # Convert all arrays to torch tensors on GPU
         N_sigma = norm.ppf(1 - (1 - acceptance) * 100 / 100)
@@ -108,21 +120,21 @@ for channel, StdCut in zip(channels, StdCuts):
         nps_torch = torch.tensor(nps_bis, dtype=torch.cfloat, device=device)
         signal_amp_torch = torch.tensor(signal_amp, dtype=torch.float32, device=device)
 
-        # f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
-        #                                                signal_amp_torch, ratio_distribution_torch, N_sigma=N_sigma,
-        #                                                n_trials=500, verbose=False)
-        # directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/window_size/"
-        # os.makedirs(directory_path, exist_ok=True)
-        # np.save(directory_path +
-        #         f"functions_eff{int(acceptance * 100):d}_window_size_{int(window_size):d}",
-        #         np.array([f1_opt, f2_opt]))
-        # np.save(directory_path +
-        #         f"J_{int(acceptance * 100):d}_window_size_{int(window_size):d}",
-        #         np.array(J_values))
-        f1_opt, f2_opt = np.load(
-            f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/window_size/"
-            f"functions_eff{int(acceptance * 100):d}_window_size_{int(window_size):d}.npy"
-        )
+        f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
+                                                       signal_amp_torch, ratio_distribution_torch, N_sigma=N_sigma,
+                                                       n_trials=500, verbose=False)
+        directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/window_size/"
+        os.makedirs(directory_path, exist_ok=True)
+        np.save(directory_path +
+                f"functions_eff{int(acceptance * 100):d}_window_size_{int(window_size):d}_4Pole_Bessel",
+                np.array([f1_opt, f2_opt]))
+        np.save(directory_path +
+                f"J_{int(acceptance * 100):d}_window_size_{int(window_size):d}_4Pole_Bessel",
+                np.array(J_values))
+        # f1_opt, f2_opt = np.load(
+        #     f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/window_size/"
+        #     f"functions_eff{int(acceptance * 100):d}_window_size_{int(window_size):d}_4Pole_Bessel.npy"
+        # )
         f1_t = torch.tensor(f1_opt, dtype=torch.float32, device=device)
         f2_t = torch.tensor(f2_opt, dtype=torch.float32, device=device)
         # f1_t = torch.tensor(f1_opt_inter(w), dtype=torch.float32, device=device)
@@ -166,13 +178,13 @@ channel_data = np.array(channel_data)
 window_size_data = np.array(window_size_data)
 data = np.column_stack([channel_data, window_size_data, BIs,BI_uncertainties, 1 - rps,rp_uncertainties, Js])
 
-header = "channel,window_size,BI, BI_err,1-rp,rp_err,J"
+header = "channel,window_size,BI,BI_err,1-rp,rp_err,J"
 
 np.savetxt(
-    f"{BASE}/outputs/Systematics/BI_window_size.csv",
+    f"{BASE}/outputs/Systematics/BI_window_size_4Pole_Bessel.csv",
     data,
     delimiter=",",
     header=header,
     comments=""
 )
-print("Results saved to outputs/Systematics/BI_window_size.csv")
+print("Results saved to outputs/Systematics/BI_window_size_4Pole_Bessel.csv")
