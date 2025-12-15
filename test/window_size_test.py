@@ -96,6 +96,7 @@ for channel, StdCut in zip(channels, StdCuts):
     # np.save(f"{directory_path}/channel{channel}_meanpulse_build_from_fit_4Pole_Bessel.npy"
     #         ,meanpulse)
     meanpulse = np.load(f"{BASE}/outputs/meanpulses_build/channel{channel}_meanpulse_build_from_fit_4Pole_Bessel.npy")
+    meanpulse /= np.max(meanpulse)
     t = np.arange(-len(meanpulse) // 2, len(meanpulse) // 2) * 1e-4
     # meanpulse = np.pad(meanpulse, (4000, 4000), 'constant', constant_values=0)
     popt, pcov = curve_fit(fit_fct_pole, t, meanpulse, p0=p0,
