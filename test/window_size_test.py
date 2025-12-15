@@ -81,22 +81,26 @@ for channel, StdCut in zip(channels, StdCuts):
                               window_fct=np.hanning,
                               use_loader=False,
                               device=device)
-    meanpulse = np.fromfile(ds.find_file(f"{meas_name}_{channel:03}_???.bin_edmean.bin",
-                                         specific_subdir="RUN9_pulse_injected_new/"))
-    meanpulse = np.pad(meanpulse, (4000, 4000), 'constant', constant_values=0)
-    mean_pulse = an.build_mean_pulse(data_single, rms_thr=StdCut, batch_size=2048, device=device,
-                                     use_loader=False).cpu().numpy()
-    S, w, H_unit = ds.compute_H(mean_pulse, nps, np.hanning)
-    H_unit_torch = torch.tensor(H_unit, dtype=torch.cfloat, device=device)
-    meanpulse = an.build_mean_pulse_filteralignement(data_single, rms_thr=StdCut,
-                                                               H=H_unit_torch, batch_size=2048,
-                                                               device=device, use_loader=False).cpu().numpy()
-    directory_path = f"{BASE}/outputs/meanpulses_build/"
-    os.makedirs(directory_path, exist_ok=True)
-    np.save(f"{directory_path}/channel{channel}_meanpulse_build_from_fit_4Pole_Bessel.npy"
-            ,meanpulse)
-    # meanpulse = np.load(f"{BASE}/outputs/meanpulses_build/channel{channel}_meanpulse_build_from_fit_4Pole_Bessel.npy")
-    meanpulse = np.pad(meanpulse, (4000, 4000), 'constant', constant_values=0)
+    # meanpulse = np.fromfile(ds.find_file(f"{meas_name}_{channel:03}_???.bin_edmean.bin",
+    #                                      specific_subdir="RUN9_pulse_injected_new/"))
+    # meanpulse = np.pad(meanpulse, (4000, 4000), 'constant', constant_values=0)
+    # mean_pulse = an.build_mean_pulse(data_single, rms_thr=StdCut, batch_size=2048, device=device,
+    #                                  use_loader=False).cpu().numpy()
+    # S, w, H_unit = ds.compute_H(mean_pulse, nps, np.hanning)
+    # H_unit_torch = torch.tensor(H_unit, dtype=torch.cfloat, device=device)
+    # meanpulse = an.build_mean_pulse_filteralignement(data_single, rms_thr=StdCut,
+    #                                                            H=H_unit_torch, batch_size=2048,
+    #                                                            device=device, use_loader=False).cpu().numpy()
+    # directory_path = f"{BASE}/outputs/meanpulses_build/"
+    # os.makedirs(directory_path, exist_ok=True)
+    # np.save(f"{directory_path}/channel{channel}_meanpulse_build_from_fit_4Pole_Bessel.npy"
+    #         ,meanpulse)
+    meanpulse = np.load(f"{BASE}/outputs/meanpulses_build/channel{channel}_meanpulse_build_from_fit_4Pole_Bessel.npy")
+    t = np.arange(-len(meanpulse) // 2, len(meanpulse) // 2) * 1e-4
+    # meanpulse = np.pad(meanpulse, (4000, 4000), 'constant', constant_values=0)
+    popt, pcov = curve_fit(fit_fct_pole, t, meanpulse, p0=p0,
+                           bounds=([0, -0.5, -5000, -5000, -5000, -5000, -5000], [10, 0.5, 0, 0, 0, 0, 0]))
+    fitted_pulse_function_on_data = lambda t: fit_fct_pole(t * 1e-4, *popt)
 
     t_torch = torch.linspace(t_min, t_max, N_t, dtype=torch.cfloat, device=device)
     r_torch = torch.linspace(r_min, r_max, N_r, dtype=torch.cfloat, device=device)
@@ -110,7 +114,8 @@ for channel, StdCut in zip(channels, StdCuts):
         # nps_bis = nps_inter(w)
         nps_bis = an.create_NPS_torch(data_noise,n_deriv=0,rms_thr=StdCut, batch_size=2048, window_fct=np.hanning,
                                       use_loader=False,device=device)
-        meanpulse_bis = meanpulse[np.argmax(meanpulse) - window_size // 2: np.argmax(meanpulse) + window_size // 2]
+        # meanpulse_bis = meanpulse[np.argmax(meanpulse) - window_size // 2: np.argmax(meanpulse) + window_size // 2]
+        meanpulse_bis = fitted_pulse_function_on_data( np.arange(-window_size // 2, window_size // 2))
         S, w, H_unit = ds.compute_H(meanpulse_bis, nps_bis, np.hanning)
         # Convert all arrays to torch tensors on GPU
         N_sigma = norm.ppf(1 - (1 - acceptance) * 100 / 100)
@@ -126,10 +131,10 @@ for channel, StdCut in zip(channels, StdCuts):
         directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/window_size/"
         os.makedirs(directory_path, exist_ok=True)
         np.save(directory_path +
-                f"functions_eff{int(acceptance * 100):d}_window_size_{int(window_size):d}_4Pole_Bessel",
+                f"functions_eff{int(acceptance * 100):d}_window_size_{int(window_size):d}_4Pole_Bessel_fit_data",
                 np.array([f1_opt, f2_opt]))
         np.save(directory_path +
-                f"J_{int(acceptance * 100):d}_window_size_{int(window_size):d}_4Pole_Bessel",
+                f"J_{int(acceptance * 100):d}_window_size_{int(window_size):d}_4Pole_Bessel_fit_data",
                 np.array(J_values))
         # f1_opt, f2_opt = np.load(
         #     f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/window_size/"
@@ -181,10 +186,10 @@ data = np.column_stack([channel_data, window_size_data, BIs,BI_uncertainties, 1 
 header = "channel,window_size,BI,BI_err,1-rp,rp_err,J"
 
 np.savetxt(
-    f"{BASE}/outputs/Systematics/BI_window_size_4Pole_Bessel.csv",
+    f"{BASE}/outputs/Systematics/BI_window_size_4Pole_Bessel_fit_data.csv",
     data,
     delimiter=",",
     header=header,
     comments=""
 )
-print("Results saved to outputs/Systematics/BI_window_size_4Pole_Bessel.csv")
+print("Results saved to outputs/Systematics/BI_window_size_4Pole_Bessel_fit_data.csv")
