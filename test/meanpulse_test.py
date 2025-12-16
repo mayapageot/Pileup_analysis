@@ -71,6 +71,7 @@ for channel, StdCut in zip(channels, StdCuts):
                                   window_fct = np.hanning,
                                   use_loader = False,
                                   device = device)
+    nps_bis *= (8./3.)  # Adjust for Hann window effect
     acceptance = 0.9
     n_deriv = 0
 

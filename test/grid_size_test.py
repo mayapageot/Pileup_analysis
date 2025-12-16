@@ -54,6 +54,7 @@ for channel, StdCut in zip(channels, StdCuts):
 
     nps_bis = an.create_NPS_torch(data_noise, n_deriv=0, rms_thr=StdCut, batch_size=2048, window_fct=np.hanning,
                                   use_loader=False, device=device)
+    nps_bis *= (8./3.)  # Adjust for Hann window effect
 
     meanpulse = np.fromfile(ds.find_file(f"{meas_name}_{channel:03}_???.bin_edmean.bin",
                                          specific_subdir="RUN9_pulse_injected_new/"))

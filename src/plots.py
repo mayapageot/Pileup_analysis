@@ -569,17 +569,20 @@ def plot_meanpulse_fit(meanpulse, y, t):
     ax1.plot(t, meanpulse)
     ax2.plot(t, meanpulse - y, label="Fit Residuals",marker='o',markersize=2,ls="")
     plt.legend()
-def plot_meanpulse_fit_freq(meanpulse, y,axs=None):
-
+def plot_meanpulse_fit_freq(meanpulse, y,axs=None, labels=None):
+    labels = ["Original mean pulse", "Fitted mean pulse"] if labels is None else labels
     (ax1,ax2) = plt.subplots(2,1, figsize=(10,8), sharex=True, gridspec_kw={'height_ratios': [3, 1],'hspace':0})[1] if axs is None else axs
     freq = np.fft.rfftfreq(len(meanpulse),1e-4)
     window = np.hanning(len(meanpulse))
     fmp = np.abs(np.fft.rfft(window*meanpulse))
-    ax1.loglog(freq,fmp, label="Original mean pulse")
+    ax1.loglog(freq,fmp, label=labels[0],alpha=0.7)
     ffmp = np.abs(np.fft.rfft(window*y))
-    ax1.loglog(freq,ffmp, label="Fitted mean pulse")
-    ax2.semilogx(freq,ffmp - fmp, label="Fit Residuals",marker='o',markersize=2,ls="")
+    ax1.loglog(freq,ffmp, label=labels[1],alpha=0.7)
+    ax2.semilogx(freq,ffmp - fmp, label="Residuals",marker='o',markersize=2,ls="")
+    ax2.set_ylim(-0.1*np.max(fmp),0.1*np.max(fmp))
     ax1.legend()
     ax1.set_ylim(1e-4,1e2)
+    ax1.set_xlabel("Frequency (Hz)")
+    ax1.set_ylabel("Amplitude")
 if __name__ == "__main__":
     plot_m1_2_all_channel()

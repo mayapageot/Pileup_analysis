@@ -560,6 +560,7 @@ def create_NPS_torch(dataset,
                      device="cuda"):
     """
     Fully GPU-accelerated Noise Power Spectrum (NPS) computation.
+    Note: The NPS is not normalized with respect to the windowing function.
     """
 
     # Prepare filter

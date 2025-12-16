@@ -115,6 +115,7 @@ for channel, StdCut in zip(channels, StdCuts):
         # nps_bis = nps_inter(w)
         nps_bis = an.create_NPS_torch(data_noise,n_deriv=0,rms_thr=StdCut, batch_size=2048, window_fct=np.hanning,
                                       use_loader=False,device=device)
+        nps_bis *= (8./3.)  # Adjust for Hann window effect
         # meanpulse_bis = meanpulse[np.argmax(meanpulse) - window_size // 2: np.argmax(meanpulse) + window_size // 2]
         meanpulse_bis = fitted_pulse_function_on_data( np.arange(-window_size // 2, window_size // 2))
         S, w, H_unit = ds.compute_H(meanpulse_bis, nps_bis, np.hanning)
@@ -139,7 +140,7 @@ for channel, StdCut in zip(channels, StdCuts):
                 np.array(J_values))
         # f1_opt, f2_opt = np.load(
         #     f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/window_size/"
-        #     f"functions_eff{int(acceptance * 100):d}_window_size_{int(window_size):d}_4Pole_Bessel.npy"
+        #     f"functions_eff{int(acceptance * 100):d}_window_size_{int(window_size):d}_4Pole_Bessel_fit_data.npy"
         # )
         f1_t = torch.tensor(f1_opt, dtype=torch.float32, device=device)
         f2_t = torch.tensor(f2_opt, dtype=torch.float32, device=device)
