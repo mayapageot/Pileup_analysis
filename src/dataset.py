@@ -69,6 +69,53 @@ class BinaryDataset(Dataset):
 
         return np_data
 
+    def get_batch(self, indices):
+        """
+        Vectorized batch loading for arbitrary window positions.
+
+        Args:
+            indices (array-like): Dataset indices.
+
+        Returns:
+            np.ndarray: Shape (batch_size, win_length)
+        """
+        indices = np.asarray(indices)
+
+        # Compute window start positions
+        starts = self.positions[indices] - self.win_shift  # (B,)
+
+        # Build index matrix: (B, win_length)
+        idx = starts[:, None] + np.arange(self.win_length)[None, :]
+
+        # Gather data in one shot
+        batch = self.file_map[idx]
+
+        # Vectorized processing
+        batch = (
+                (np.right_shift(batch, 8).astype(np.float64) / (2 ** 23))
+                * self.adcRange
+                - self.adcRange
+        )
+
+        return torch.tensor(batch)
+
+    def set_win_length(self, win_length, win_shift = 0):
+        """
+        Adjusts the window length and shift for data extraction.
+
+        Args:
+            win_length (int): New window length.
+            win_shift (int): New window shift.
+        """
+        if win_length == self.win_length and win_shift == self.win_shift:
+            return
+        win_length = int(win_length)
+        start = self.win_shift - win_shift
+        if start + win_length > self.win_length:
+            raise ValueError(f"Requested window length {win_length} exceeds max length {self.win_length}")
+        self.win_length = win_length
+        self.win_shift = win_shift
+
     def __len__(self):
         """
         Returns the total number of data windows in the dataset.
