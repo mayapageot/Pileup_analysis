@@ -51,18 +51,41 @@ def compute_vars(S2_over_nps, f1, f2):
     cross = torch.sum((f1 * torch.conj(f2)) * absS2_over_nps) / 2
     R1 = torch.sum(abs_f1 * absS2_over_nps)
     R2 = torch.sum(abs_f2 * absS2_over_nps)
-    var1 = num1 / (R1.abs() ** 2)
-    var2 = num2 / (R2.abs() ** 2)
-    cov12 = cross / (R1 * torch.conj(R2))
+    var1 = num1 / (R1.abs() ** 2)*2
+    var2 = num2 / (R2.abs() ** 2)*2
+    cov12 = cross / (R1 * torch.conj(R2))*2
     return var1.real, var2.real, cov12.real
 
 
 def compute_sigma_ratio(mu1, mu2, var1, var2, cov12):
     varY = var1 / mu2 ** 2 + (mu1 ** 2) * var2 / mu2 ** 4 - 2 * mu1 * cov12 / mu2 ** 3
-    return torch.sqrt(varY) * 2
+    return varY**0.5
 
 
-def compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, return_all=False):
+def compute_sigma_ratio_order4(mu_X, mu_Y,sigma_X, sigma_Y, cov_XY = 0):
+    # Relative errors
+    eps_X = sigma_X / mu_X
+    eps_Y = sigma_Y / mu_Y
+
+    # Convert covariance to relative form
+    rho = cov_XY / (sigma_X * sigma_Y) if sigma_X * sigma_Y != 0 else 0
+
+    # Leading order
+    var_LO = eps_X ** 2 + eps_Y ** 2 - 2 * rho * eps_X * eps_Y
+
+    # Higher order O(sigma^4)
+    var_HO = 2 * eps_X ** 2 * eps_Y ** 2 + 3 * eps_Y ** 4 - 6 * rho * eps_X * eps_Y ** 3 + rho ** 2 * eps_X ** 2 * eps_Y ** 2
+
+    # Total relative variance
+    rel_var = var_LO + var_HO
+
+    # Absolute variance
+    var_R = (mu_X / mu_Y) ** 2 * rel_var
+
+    return var_R**0.5
+
+
+def compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, return_all=False, order=4):
     """
     Computes the mean (mu) and standard deviation (sigma) for the given filters and signal.
 
@@ -92,7 +115,10 @@ def compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, retur
     mu2 = torch.max(s_pileup_2.real, dim = -1).values
     muY = mu1 / mu2
     var1, var2, cov12 = compute_vars(S2_over_nps, f1, f2)
-    sigmaY = compute_sigma_ratio(mu1, mu2, var1, var2, cov12) / signal_amp
+    if order == 2:
+        sigmaY = compute_sigma_ratio(mu1*signal_amp, mu2*signal_amp, var1, var2, cov12)
+    elif order == 4:
+        sigmaY = compute_sigma_ratio_order4(mu1*signal_amp, mu2*signal_amp, var1**0.5, var2**0.5, cov12)
     if return_all:
         return muY, sigmaY, mu1, mu2, var1, var2, cov12
     else:
