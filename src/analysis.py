@@ -85,7 +85,8 @@ def compute_sigma_ratio_order4(mu_X, mu_Y,sigma_X, sigma_Y, cov_XY = 0):
     return var_R**0.5
 
 
-def compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, return_all=False, order=4):
+def compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, return_all=False, order=4,
+                     jitter_max=20, interpolation_range=5):
     """
     Computes the mean (mu) and standard deviation (sigma) for the given filters and signal.
 
@@ -99,20 +100,79 @@ def compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, retur
         signal_amp (float): Signal amplitude.
         return_all (bool, optional): If True, returns additional intermediate values. Defaults to False.
 
-    Returns:
+    Returns:# Filtered output 1
+        filt1 = torch.fft.ifft(H_1_filtered * fpulse, dim=-1).real
+        filt1 = torch.roll(filt1, shifts=n_cols // 2, dims=1)
+
+        # Peak search band
+        lo = n_cols // 2 - jitter_max
+        hi = n_cols // 2 + jitter_max
+
+        sub1 = filt1[:, lo:hi]
+        max_idx1 = sub1.argmax(dim=1) + lo
+
+        # Same for filter 2
+        filt2 = torch.fft.ifft(H_2_filtered * fpulse, dim=-1).real
+        filt2 = torch.roll(filt2, shifts=n_cols // 2, dims=1)
+        sub2 = filt2[:, lo:hi]
+        max_idx2 = sub2.argmax(dim=1) + lo
+
+        # interpolation samples
+        offs = torch.arange(-interpolation_range, interpolation_range + 1, device=device)
+
+        idx1 = max_idx1[:, None] + offs[None, :]
+        idx2 = max_idx2[:, None] + offs[None, :]
+
+        y1 = filt1.gather(1, idx1)
+        y2 = filt2.gather(1, idx2)
+
+        # cubic interpolation
+        interp1 = cubic_interp1d_scipy(y1, fine_x)
+        interp2 = cubic_interp1d_scipy(y2, fine_x)
+
+        # extract amplitudes
+        Amp_1.append(interp1.max(dim=1).values)
+        Amp_2.append(interp2.max(dim=1).values)
         tuple:
             - muY (torch.Tensor): Ratio of the maximum amplitudes of the two signals.
             - sigmaY (torch.Tensor): Standard deviation of the ratio.
             - (Optional) Additional intermediate values if `return_all` is True.
     """
-    s_H_1 = torch.fft.ifft(S_H * f1).real
+    fine_x = np.arange(-interpolation_range, interpolation_range + 1, 0.05)
+    s_H_1 = torch.fft.ifft(S_H * f1, dim = -1).real
     s_H_delayed_1 = torch.fft.ifft(S_H_delayed * f1, dim = -1).real
-    s_pileup_1 = (1-r[:, None, None]) * s_H_1 + r[:, None, None] * s_H_delayed_1[None, :, :]
-    mu1 = torch.max(s_pileup_1.real, dim = -1).values
-    s_H_2 = torch.fft.ifft(S_H * f2).real
+
+    s_H_2 = torch.fft.ifft(S_H * f2, dim = -1).real
     s_H_delayed_2 = torch.fft.ifft(S_H_delayed * f2, dim = -1).real
-    s_pileup_2 = (1-r[:, None, None]) * s_H_2 + r[:, None, None] * s_H_delayed_2[None, :, :]
-    mu2 = torch.max(s_pileup_2.real, dim = -1).values
+    s_pileup_1 = (1 - r[:, None, None]) * s_H_1 \
+                 + r[:, None, None] * s_H_delayed_1[None, :, :]
+
+    s_pileup_2 = (1 - r[:, None, None]) * s_H_2 \
+                 + r[:, None, None] * s_H_delayed_2[None, :, :]
+    n_cols = s_pileup_1.shape[-1]
+
+    s_pileup_1 = torch.roll(s_pileup_1.real, shifts = n_cols // 2, dims = -1)
+    s_pileup_2 = torch.roll(s_pileup_2.real, shifts = n_cols // 2, dims = -1)
+    lo = n_cols // 2 - jitter_max
+    hi = n_cols // 2 + jitter_max
+    sub1 = s_pileup_1[..., lo:hi]
+    sub2 = s_pileup_2[..., lo:hi]
+    max_idx1 = sub1.argmax(dim = -1) + lo
+    max_idx2 = sub2.argmax(dim = -1) + lo
+    offs = torch.arange(
+        -interpolation_range,
+        interpolation_range + 1,
+        device = s_pileup_1.device
+    )
+    idx1 = max_idx1[..., None] + offs
+    idx2 = max_idx2[..., None] + offs
+    y1 = s_pileup_1.gather(-1, idx1)
+    y2 = s_pileup_2.gather(-1, idx2)
+    interp1 = cubic_interp1d_scipy(y1, fine_x)
+    interp2 = cubic_interp1d_scipy(y2, fine_x)
+    mu1 = interp1.max(dim = -1).values
+    mu2 = interp2.max(dim = -1).values
+
     muY = mu1 / mu2
     var1, var2, cov12 = compute_vars(S2_over_nps, f1, f2)
     if order == 2:
@@ -140,7 +200,7 @@ def compute_A(muY, sigmaY, N_sigma=1.28):
     return 1 - norm.cdf((1-muY-N_sigma*sigmaY[0, 0]) / sigmaY)
 
 
-def compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distribution, N_sigma=1.28):
+def compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distribution, N_sigma=1.28,full_output=False):
     """
     Computes the J metric for the given inputs.
 
@@ -160,6 +220,8 @@ def compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distri
     """
     muY, sigmaY = compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp)
     A = compute_A(muY, sigmaY, N_sigma=N_sigma)
+    if full_output:
+        return torch.mean(A*ratio_distribution[:, None]).real,A, muY, sigmaY
     return torch.mean(A*ratio_distribution[:, None]).real
 
 
@@ -365,44 +427,55 @@ def cubic_interpolate(y, fine_x):
 
 def cubic_interp1d_scipy(y, fine_x):
     """
-    y:      (B, S) sampled on uniform grid x = 0,1,...,S-1
-    fine_x: (N,)   arbitrary float positions in the same coordinate system
+    y:      (..., S) torch.Tensor
+    fine_x: (N,) numpy.ndarray OR torch.Tensor
 
     Returns:
-        (B, N) cubic interpolation matching SciPy interp1d(kind='cubic')
+        (..., N) torch.Tensor
     """
 
-    B, S = y.shape
-    N = fine_x.shape[0]
+    # --- ensure fine_x is torch ---
+    if not torch.is_tensor(fine_x):
+        fine_x = torch.as_tensor(
+            fine_x, device=y.device, dtype=y.dtype
+        )
 
-    # Compute tangents m_i exactly like SciPy (Catmull–Rom style)
-    # m_i = (y_{i+1} - y_{i-1}) / 2
-    ym1 = torch.roll(y, 1, dims=1)
+    *batch, S = y.shape
+    N = fine_x.numel()
+
+    y = y.reshape(-1, S)   # (B, S)
+    B = y.shape[0]
+
+    # ----------------------------
+    # Tangents (Catmull–Rom)
+    # ----------------------------
+    ym1 = torch.roll(y,  1, dims=1)
     yp1 = torch.roll(y, -1, dims=1)
-    m = (yp1 - ym1) * 0.5
+    m = 0.5 * (yp1 - ym1)
 
-    # Clamp edge derivatives (SciPy behavior)
-    # At boundaries it uses one-sided finite differences
-    m[:, 0] = (y[:, 1] - y[:, 0])
-    m[:, -1] = (y[:, -1] - y[:, -2])
+    # One-sided finite differences at boundaries (SciPy behavior)
+    m[:, 0]  = y[:, 1]  - y[:, 0]
+    m[:, -1] = y[:, -1] - y[:, -2]
 
-    # ---- Locate interval indices ----
-    # floor_x = left index i
-    x = fine_x.clamp(0, S - 1 - 1e-12)     # stay inside valid range
-    i = x.floor().long()                   # left point index
-    t = (x - i.float()).view(1, -1)        # normalize fractional position (1,N)
+    # ----------------------------
+    # Interval indices
+    # ----------------------------
+    x = fine_x.clamp(0, S - 1 - 1e-12)
+    i = x.floor().long()
+    t = (x - i.float())[None, :]    # (1, N)
 
-    # (B,N) gather values at i and i+1
     i1 = i.clamp(0, S - 1)
     i2 = (i + 1).clamp(0, S - 1)
 
-    y_i  = y.gather(1, i1.unsqueeze(0).expand(B, -1))
-    y_ip = y.gather(1, i2.unsqueeze(0).expand(B, -1))
+    y_i  = y.gather(1, i1.expand(B, -1))
+    y_ip = y.gather(1, i2.expand(B, -1))
 
-    m_i  = m.gather(1, i1.unsqueeze(0).expand(B, -1))
-    m_ip = m.gather(1, i2.unsqueeze(0).expand(B, -1))
+    m_i  = m.gather(1, i1.expand(B, -1))
+    m_ip = m.gather(1, i2.expand(B, -1))
 
-    # ---- Cubic Hermite spline basis functions ----
+    # ----------------------------
+    # Hermite basis
+    # ----------------------------
     t2 = t * t
     t3 = t2 * t
 
@@ -411,13 +484,17 @@ def cubic_interp1d_scipy(y, fine_x):
     h01 = -2*t3 + 3*t2
     h11 =      t3 -    t2
 
-    # ---- Final spline ----
-    out = (h00 * y_i
-         + h10 * m_i
-         + h01 * y_ip
-         + h11 * m_ip)
+    # ----------------------------
+    # Cubic spline
+    # ----------------------------
+    out = (
+        h00 * y_i +
+        h10 * m_i +
+        h01 * y_ip +
+        h11 * m_ip
+    )
 
-    return out   # shape (B, N)
+    return out.view(*batch, N)
 
 
 def batch_iterator(dataset, batch_size=4096, device="cpu", use_loader=True, shuffle=False, num_workers=4, prefetch_factor=2):

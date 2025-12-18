@@ -158,7 +158,7 @@ class CachedBinaryDataset(Dataset):
 
         self.win_length = int(win_length)
         self.n_windows = len(positions)
-
+        self.positions = positions
         header = read_bin_header(file_path)
         self.samplingRate = header["samplingRate"]
         self.adcRange = header["adcRange"]
@@ -220,7 +220,7 @@ from scipy.interpolate import interp1d
 class CachedBinaryDataset_withgenerated(CachedBinaryDataset):
     def __init__(self, file_path, position_file, win_length, pulse = None,
                  n_windows = 12288, win_shift = 0, device = "cpu", dtype = np.uint32):
-        pos_file = np.loadtxt(position_file)[:n_windows]
+        pos_file = np.loadtxt(position_file, ndmin=2)[:n_windows]
         positions = (pos_file[:, 0] // 4).astype(int)
         super().__init__(file_path, win_length, positions,
                          win_shift, device, dtype)
@@ -302,13 +302,17 @@ def find_file(target, specific_subdir = ""):
     return file_paths[0]
 
 
-def find_files(data_name, pos_name, channel, pos_prefix = "_bis", differenciate = False, file_suffix = "",
+def find_files(data_name, pos_name, channel, pos_prefix = "_stdcut", differenciate = False, file_suffix = "",
                specific_subdir = ""):
     modif = "_dif" if differenciate else ""
     target = data_name + f"_{channel:03}_???{modif}.bin{file_suffix}"
     file_path = find_file(target, specific_subdir)
-    target_pos = pos_name + f"_{channel:03}_???{pos_prefix}.pos"
-    path_pos = find_file(target_pos, specific_subdir)
+    try:
+        target_pos = pos_name + f"_{channel:03}_???{pos_prefix}.pos"
+        path_pos = find_file(target_pos, specific_subdir)
+    except FileNotFoundError:
+        target_pos = pos_name + f".pos"
+        path_pos = find_file(target_pos, specific_subdir)
     return file_path, path_pos
 
 
@@ -318,7 +322,7 @@ def create_data_sets(channel,
                          "pos_name": ["pup_n1-d0_000813_20230628T161508", "pup_n1-d8_000813_20230628T161508"],
                          "specific_subdir": ["RUN9_pulse_injected_new/", "RUN9_pulse_injected_new/"],
                          "full_info": [False, True]},
-                     win_length = 2000, shift = 0, pos_prefix = "_bis", file_suffix = "", differenciate = False,
+                     win_length = 2000, shift = 0, pos_prefix = "", file_suffix = "", differenciate = False,
                      len_data = 15000, cached = False, **kwargs):
     """
     Creates datasets for single and pileup data, along with additional processed information.
@@ -350,7 +354,8 @@ def create_data_sets(channel,
                                          pos_prefix = pos_prefix, differenciate = differenciate,
                                          file_suffix = file_suffix,
                                          specific_subdir = specific_subdir)
-        pos_file = np.loadtxt(pos_path)[:len_data]
+        print(pos_path)
+        pos_file = np.loadtxt(pos_path, ndmin=2)[:len_data]
         positions = (pos_file[:, 0] // 4).astype(int)
         data = dataset_class(file_path, win_length, positions, win_shift = win_length // 2 - shift,
                              **kwargs)
@@ -522,7 +527,7 @@ def get_noise_dataset(channel, denoise = False):
         file_path_single, path_pos_single = find_files(dataset_single_name, channel, pos_prefix = "_bis",
                                                        file_suffix = "", differenciate = False,
                                                        specific_subdir = "RUN9_pulse_injected_new/")
-        pos_file_single = np.loadtxt(path_pos_single)[:15000]
+        pos_file_single = np.loadtxt(path_pos_single, ndmin=2)[:15000]
         positions_single = (pos_file_single[:, 0] // 4).astype(int)
         data_noise = BinaryDataset(find_file(f"000813_20230628T161508_{channel:03}_???.bin"), win_length,
                                    positions_single, win_shift = win_length // 2 - shift)
