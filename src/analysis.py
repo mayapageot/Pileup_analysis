@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from scipy.stats import gaussian_kde
 import utility.functions as fn
+import math
 norm = Normal(0, 1)
 
 
@@ -790,8 +791,6 @@ def compute_BI_uncertainty(PSD_single, PSD_pileup, acceptance, rp, K=fn.K):
     sigma_BI = K * sigma_rp
     return sigma_rp, sigma_BI
 
-import torch
-import math
 
 def _gaussian_kde_torch(x: torch.Tensor, points: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     """
