@@ -6,11 +6,10 @@ from dotenv import load_dotenv
 import ast
 import torch
 import struct
-
+from src.analysis import compute_H
+from scipy.interpolate import interp1d
 load_dotenv()
 main_dir = os.getenv("DATA_PATH")
-if os.path.isdir(main_dir) == False:
-    main_dir = "/local/home/mp274748/Documents/data/RUN9/"
 
 
 class NumpyDataset(Dataset):
@@ -49,19 +48,18 @@ class BinaryDataset(Dataset):
                                                                            win_length)
         self.win_shift = int(win_shift)
 
-    def load_and_process_window(self, file_map, start):
+    def load_and_process_window(self, start):
         """
         Loads a window of data from the memory-mapped file and applies processing.
 
         Args:
-            file_map (np.memmap): Memory-mapped binary file.
             start (int): Starting index for the window.
 
         Returns:
             np.array: Processed data window.
         """
         # Extract a slice of raw data of length `win_length` starting at `start`
-        np_data = np.array(file_map[start:start + self.win_length], dtype = self.dtype)
+        np_data = np.array(self.file_map[start:start + self.win_length], dtype = self.dtype)
 
         # Bit-shift each 32-bit value to the right by 8 bits, convert to float64,
         # normalize from raw values to a range between -10.24 and +10.24
@@ -136,7 +134,7 @@ class BinaryDataset(Dataset):
         start = self.positions[index] - self.win_shift
 
         # Load and process the data window
-        data = self.load_and_process_window(self.file_map, start)
+        data = self.load_and_process_window(start)
 
         return data
 
@@ -148,14 +146,24 @@ class BinaryDatasetDenoised(BinaryDataset):
 
     def __getitem__(self, index):
         start = self.positions[index] - self.win_shift
-        raw_data = self.load_and_process_window(self.file_map, start) - self.denoised_data[index]
+        raw_data = self.load_and_process_window(start) - self.denoised_data[index]
         return raw_data
 
 
 class CachedBinaryDataset(Dataset):
     def __init__(self, file_path, win_length, positions,
                  win_shift = 0, device = "cpu", dtype = np.uint32):
+        """
+            Initializes the CachedBinaryDataset.
 
+            Args:
+                file_path (str): Path to the binary file to be loaded.
+                win_length (int): Length of each data window to extract.
+                positions (array-like): List of starting positions in the binary file for windows.
+                win_shift (int, optional): Shift applied to window start positions. Defaults to 0.
+                device (str, optional): Device to store the data (e.g., "cpu" or "cuda"). Defaults to "cpu".
+                dtype (numpy dtype, optional): Data type for reading binary data. Defaults to np.uint32.
+        """
         self.win_length = int(win_length)
         self.n_windows = len(positions)
         self.positions = positions
@@ -199,7 +207,7 @@ class CachedBinaryDataset(Dataset):
         win_length = int(win_length)
         start = self.win_shift - win_shift
         if start + win_length > self.win_length:
-            raise ValueError(f"Requested window length {win_length} exceeds max length {self.full_data.shape[1]}")
+            raise ValueError(f"Requested window length {win_length} exceeds max length {self.win_length}")
         self.data = self.data[:, start:start + win_length]
         self.win_length = win_length
         self.win_shift = win_shift
@@ -214,12 +222,22 @@ class CachedBinaryDataset(Dataset):
         return self.data[idx]
 
 
-from scipy.interpolate import interp1d
-
-
 class CachedBinaryDataset_withgenerated(CachedBinaryDataset):
     def __init__(self, file_path, position_file, win_length, pulse = None,
                  n_windows = 12288, win_shift = 0, device = "cpu", dtype = np.uint32):
+        """
+            Initializes the CachedBinaryDataset_withgenerated class.
+
+            Args:
+                file_path (str): Path to the binary file to be loaded.
+                position_file (str): Path to the file containing position data.
+                win_length (int): Length of each data window to extract.
+                pulse (callable or np.ndarray, optional): Pulse function or array for interpolation. Defaults to None.
+                n_windows (int, optional): Number of windows to process. Defaults to 12288.
+                win_shift (int, optional): Shift applied to window start positions. Defaults to 0.
+                device (str, optional): Device to store the data (e.g., "cpu" or "cuda"). Defaults to "cpu".
+                dtype (numpy dtype, optional): Data type for reading binary data. Defaults to np.uint32.
+        """
         pos_file = np.loadtxt(position_file, ndmin=2)[:n_windows]
         positions = (pos_file[:, 0] // 4).astype(int)
         super().__init__(file_path, win_length, positions,
@@ -233,7 +251,8 @@ class CachedBinaryDataset_withgenerated(CachedBinaryDataset):
                 np.arange(- len_pulse // 2, len_pulse // 2),
                 pulse, kind = 'quadratic', fill_value = 0., bounds_error = False)
         else:
-            pulse_inter = lambda x: 0 * x
+            def pulse_inter(x):
+                return 0 * x
         if pos_file.shape[1] > 3:
             smearing = pos_file[:, -2]
             dt = pos_file[:, -1]
@@ -245,6 +264,46 @@ class CachedBinaryDataset_withgenerated(CachedBinaryDataset):
             smearing = pos_file[:, -1]
             e1 = pos_file[:, 1]
             self.data += e1[:, None] * pulse_inter(time + smearing[:, None])
+
+
+def batch_iterator(dataset, batch_size=4096, device="cpu", use_loader=True,
+                   shuffle=False, num_workers=4, prefetch_factor=2):
+    """
+        Creates an iterator for batching data from a dataset, with options for using a DataLoader or a custom batch
+        loader.
+
+        Args:
+            dataset (torch.utils.data.Dataset): The dataset to iterate over.
+            batch_size (int, optional): Number of samples per batch. Defaults to 4096.
+            device (str, optional): Device to move the batches to (e.g., "cpu" or "cuda"). Defaults to "cpu".
+            use_loader (bool, optional): Whether to use PyTorch's DataLoader for batching. Defaults to True.
+            shuffle (bool, optional): Whether to shuffle the dataset before batching. Defaults to False.
+            num_workers (int, optional): Number of worker threads for data loading (used if `use_loader` is True).
+            Defaults to 4.
+            prefetch_factor (int, optional): Number of batches to prefetch per worker (used if `use_loader` is True).
+            Defaults to 2.
+
+        Yields:
+            torch.Tensor: A batch of data moved to the specified device.
+    """
+    if use_loader:
+        # Standard DataLoader
+        from torch.utils.data import DataLoader
+        loader = DataLoader(dataset,
+                            batch_size=batch_size,
+                            shuffle=shuffle,
+                            pin_memory=True,
+                            num_workers=num_workers,
+                            prefetch_factor=prefetch_factor)
+        for batch in loader:
+            yield batch.to(device, dtype=torch.float32)
+    else:
+        # Custom get_batch loop (vectorized, fast)
+        n_batches = (len(dataset) + batch_size - 1) // batch_size
+        for i in range(n_batches):
+            indices = torch.arange(i*batch_size, min((i+1)*batch_size, len(dataset)))
+            batch = dataset.get_batch(indices)
+            yield batch.to(device, dtype=torch.float32)
 
 
 def load_binary_file(file_path, dtype = np.uint32):
@@ -266,14 +325,20 @@ def load_binary_file(file_path, dtype = np.uint32):
 
 def read_bin_header(path):
     """
-    Read BinHeader as defined in C++:
-        char endian
-        char padding[3]
-        float samplingRate
-        float adcRange
-    Total: 12 bytes
-    """
+        Reads the header of a binary file and extracts metadata.
 
+        Args:
+            path (str): Path to the binary file.
+
+        Returns:
+            dict: A dictionary containing the following keys:
+                - "endian" (str): Endianness of the file ('<' for little-endian, '>' for big-endian).
+                - "samplingRate" (float): Sampling rate extracted from the header.
+                - "adcRange" (float): ADC range extracted from the header.
+
+        Raises:
+            ValueError: If the file is too small to contain the expected header structure.
+    """
     header_struct = struct.Struct("<c3xff")
 
     with open(path, "rb") as f:
@@ -294,6 +359,20 @@ def read_bin_header(path):
 
 
 def find_file(target, specific_subdir = ""):
+    """
+        Searches for a file within a specified subdirectory or the main directory.
+
+        Args:
+            target (str): The name of the file to search for.
+            specific_subdir (str, optional): A specific subdirectory within the main directory to narrow the search.
+            Defaults to "".
+
+        Returns:
+            str: The full path to the first matching file.
+
+        Raises:
+            FileNotFoundError: If the file is not found in the specified subdirectory or the main directory.
+    """
     file_paths = glob.glob(os.path.join(main_dir, specific_subdir, "**", target), recursive = True)
     if len(file_paths) == 0:
         file_paths = glob.glob(os.path.join(main_dir, "**", target), recursive = True)
@@ -304,6 +383,26 @@ def find_file(target, specific_subdir = ""):
 
 def find_files(data_name, pos_name, channel, pos_prefix = "_stdcut", differenciate = False, file_suffix = "",
                specific_subdir = ""):
+    """
+        Finds the file paths for data and position files based on the provided parameters.
+
+        Args:
+            data_name (str): Base name of the data file to search for.
+            pos_name (str): Base name of the position file to search for.
+            channel (int): Channel number to include in the file name pattern.
+            pos_prefix (str, optional): Prefix for the position file. Defaults to "_stdcut".
+            differenciate (bool, optional): Whether to use differentiated data paths. Defaults to False.
+            file_suffix (str, optional): Suffix to append to the file name. Defaults to "".
+            specific_subdir (str, optional): Specific subdirectory to narrow the search. Defaults to "".
+
+        Returns:
+            tuple: A tuple containing:
+                - file_path (str): Full path to the data file.
+                - path_pos (str): Full path to the position file.
+
+        Raises:
+            FileNotFoundError: If either the data file or the position file is not found.
+    """
     modif = "_dif" if differenciate else ""
     target = data_name + f"_{channel:03}_???{modif}.bin{file_suffix}"
     file_path = find_file(target, specific_subdir)
@@ -316,33 +415,43 @@ def find_files(data_name, pos_name, channel, pos_prefix = "_stdcut", differencia
     return file_path, path_pos
 
 
-def create_data_sets(channel,
-                     dataset_dict = {
-                         "data_name": ["pup_n1-d0_000813_20230628T161508", "pup_n1-d8_000813_20230628T161508"],
-                         "pos_name": ["pup_n1-d0_000813_20230628T161508", "pup_n1-d8_000813_20230628T161508"],
-                         "specific_subdir": ["RUN9_pulse_injected_new/", "RUN9_pulse_injected_new/"],
-                         "full_info": [False, True]},
-                     win_length = 2000, shift = 0, pos_prefix = "", file_suffix = "", differenciate = False,
-                     len_data = 15000, cached = False, **kwargs):
+def create_data_sets(channel, dataset_dict = None, win_length = 2000, shift = 0,
+                     pos_prefix = "", file_suffix = "",
+                     differenciate = False, len_data = 15000, cached = False,
+                     **kwargs):
     """
     Creates datasets for single and pileup data, along with additional processed information.
 
     Args:
         channel (int): Channel number to process.
+        dataset_dict (dict, optional): Dictionary containing dataset configuration. Defaults to None.
+            Expected keys:
+                - "data_name" (list of str): Base names of the data files.
+                - "pos_name" (list of str): Base names of the position files.
+                - "specific_subdir" (list of str): Subdirectories for file search.
+                - "full_info" (list of bool): Flags indicating whether to include additional information.
         win_length (int, optional): Length of each data window. Defaults to 2000.
         shift (int, optional): Shift applied to window start positions. Defaults to 0.
-        pos_prefix (str, optional): Prefix for position files. Defaults to "_bis".
+        pos_prefix (str, optional): Prefix for position files. Defaults to "".
         file_suffix (str, optional): Suffix for binary files. Defaults to "".
-        differenciate (bool, optional): Whether to use differentiated data paths. Defaults to True.
+        differenciate (bool, optional): Whether to use differentiated data paths. Defaults to False.
+        len_data (int, optional): Number of data entries to process. Defaults to 15000.
+        cached (bool, optional): Whether to use cached datasets. Defaults to False.
+        **kwargs: Additional arguments passed to the dataset class.
 
     Returns:
         tuple: A tuple containing:
-            - data_single (BinaryDataset): Dataset for single data.
-            - data_pileup (BinaryDataset): Dataset for pileup data.
-            - dt_pileup (numpy.ndarray): Time differences for pileup data.
-            - fracE_pileup (numpy.ndarray): Fractional energy for pileup data.
-            - e_pileups (numpy.ndarray): Energy values for pileup data.
+            - data_single (BinaryDataset or CachedBinaryDataset): Dataset for single data.
+            - data_pileup (BinaryDataset or CachedBinaryDataset): Dataset for pileup data.
+            - parameters (list): Additional processed information for pileup data.
     """
+    if dataset_dict is None:
+        dataset_dict = {
+            "data_name": ["pup_n1-d0_000813_20230628T161508", "pup_n1-d8_000813_20230628T161508"],
+            "pos_name": ["pup_n1-d0_000813_20230628T161508", "pup_n1-d8_000813_20230628T161508"],
+            "specific_subdir": ["RUN9_pulse_injected_new/", "RUN9_pulse_injected_new/"],
+            "full_info": [False, True]
+        }
     dataset_class = CachedBinaryDataset if cached else BinaryDataset
     datas = []
     parameters = []
@@ -369,78 +478,6 @@ def create_data_sets(channel,
     return *datas, parameters
 
 
-def create_data_sets_denoise(channel, win_length = 2000, shift = 0, pos_prefix = "_bis", file_suffix = "",
-                             differenciate = False,
-                             specific_subdir = "RUN9_pulse_injected_new/"):
-    """
-    Creates datasets for single and pileup data, along with additional processed information.
-
-    Args:
-        channel (int): Channel number to process.
-        win_length (int, optional): Length of each data window. Defaults to 2000.
-        shift (int, optional): Shift applied to window start positions. Defaults to 0.
-        pos_prefix (str, optional): Prefix for position files. Defaults to "_bis".
-        file_suffix (str, optional): Suffix for binary files. Defaults to "".
-        differenciate (bool, optional): Whether to use differentiated data paths. Defaults to True.
-
-    Returns:
-        tuple: A tuple containing:
-            - data_single (BinaryDataset): Dataset for single data.
-            - data_pileup (BinaryDataset): Dataset for pileup data.
-            - dt_pileup (numpy.ndarray): Time differences for pileup data.
-            - fracE_pileup (numpy.ndarray): Fractional energy for pileup data.
-            - e_pileups (numpy.ndarray): Energy values for pileup data.
-    """
-    dataset_pileup_name = "pup_n1-d8_000813_20230628T161508"
-    file_path_pileup, _ = find_files(dataset_pileup_name, channel,
-                                     pos_prefix = pos_prefix, differenciate = differenciate,
-                                     file_suffix = file_suffix,
-                                     specific_subdir = specific_subdir)
-    # Load pileup positions and process
-    channels = [3, 5, 9, 11, 13, 15, 17, 19]
-    Global_stds = [0.00021900556748732924, 0.00028078060131520033, 0.00047128828009590507, 0.0003684174735099077,
-                   0.0005077228997834027, 0.0004087088746018708, 0.0002996263501700014, 0.0011633249232545495]
-    positions_pileup = torch.load(
-        f"{main_dir}/RUN9/noise_file_RUN9/pup_n1-d8_000813_20230628T161508_{channel:03}_000_bis.pt").numpy()
-    noise_pred_pileup = np.load(f"{main_dir}/RUN9/noise_file_RUN9/pulses_pred_d8_{channel:03}.npy")
-    # Create BinaryDataset for pileup data
-    data_pileup = BinaryDatasetDenoised(file_path_pileup,
-                                        noise_pred_pileup[:, noise_pred_pileup.shape[1] // 2 - win_length // 2 - shift:
-                                                             noise_pred_pileup.shape[
-                                                                 1] // 2 + win_length // 2 - shift] *
-                                        Global_stds[channels.index(channel)],
-                                        win_length, positions_pileup,
-                                        win_shift = win_length // 2 - shift)
-    dataset_single_name = "pup_n1-d0_000813_20230628T161508"
-    file_path_single, path_pos_single = find_files(dataset_single_name, channel,
-                                                   pos_prefix = pos_prefix, differenciate = differenciate,
-                                                   file_suffix = file_suffix,
-                                                   specific_subdir = specific_subdir)
-    # Load single positions and create BinaryDataset
-    positions_single = torch.load(
-        f"{main_dir}/RUN9/noise_file_RUN9/pup_n1-d0_000813_20230628T161508_{channel:03}_000_bis.pt").numpy()
-    noise_pred_single = np.load(f"{main_dir}/RUN9/noise_file_RUN9/pulses_pred_d0_{channel:03}.npy")
-    data_single = BinaryDatasetDenoised(file_path_single,
-                                        noise_pred_single[:, noise_pred_single.shape[1] // 2 - win_length // 2 - shift:
-                                                             noise_pred_single.shape[
-                                                                 1] // 2 + win_length // 2 - shift] *
-                                        Global_stds[channels.index(channel)],
-                                        win_length, positions_single,
-                                        win_shift = win_length // 2 - shift)
-    return data_single, data_pileup
-
-
-def compute_H(meanpulse, nps, window_fct):
-    size = len(nps)
-    S = np.fft.fft(meanpulse * window_fct(size))
-    freq = np.fft.fftfreq(size, 1e-4)
-    w = 2 * np.pi * freq
-    # Compute filter response and normalize it
-    H = np.conj(S) / nps
-    H_unit = H / np.mean(np.abs(H * S))
-    return S, w, H_unit
-
-
 def get_channel_specs(channel, n_deriv = 1, window_fct = np.ones, nps_name = "raw_noise"):
     """
     Loads and processes filter data for a given channel.
@@ -448,6 +485,8 @@ def get_channel_specs(channel, n_deriv = 1, window_fct = np.ones, nps_name = "ra
     Args:
         channel (int): Channel number to process.
         n_deriv (int, optional): Number of derivatives to compute. Defaults to 1.
+        window_fct (callable, optional): Window function to apply. Defaults to np.ones.
+        nps_name (str, optional): Name of the noise power spectrum file. Defaults to "raw_noise".
 
     Returns:
         tuple: A tuple containing:
@@ -478,6 +517,17 @@ def get_channel_specs(channel, n_deriv = 1, window_fct = np.ones, nps_name = "ra
 
 
 def load_params_simu(filename):
+    """
+        Loads simulation parameters from a configuration file.
+
+        Args:
+            filename (str): Path to the configuration file.
+
+        Returns:
+            dict: A dictionary containing the parsed parameters. Keys are parameter names (str),
+                  and values are the corresponding parsed values. Values are parsed as Python literals
+                  (e.g., int, float, list, dict) if possible; otherwise, they are returned as strings.
+    """
     params = {}
     with open(filename, "r") as f:
         for line in f:
@@ -494,7 +544,7 @@ def load_params_simu(filename):
                 # Try to parse Python literal
                 try:
                     parsed_value = ast.literal_eval(value)
-                except:
+                except ValueError:
                     parsed_value = value  # leave as string
 
                 params[key] = parsed_value
@@ -503,32 +553,15 @@ def load_params_simu(filename):
 
 
 def get_amp_Q_val(channel):
+    """
+        Computes the amplitude quality value (Q value) for a given channel.
+
+        Args:
+            channel (int): The channel number for which the Q value is to be computed.
+
+        Returns:
+            float: The computed amplitude Q value.
+        """
     target = f"000813_20230628T161508_{channel:03}_???-pup_single.injconf"
     params = load_params_simu(find_file(target, specific_subdir = "RUN9_pulse_injected_new/"))
     return params["LY_close"] * 3.034 * params["ampl_Tl"] / 2.614511 / params["LY_far"] * params["area_factor"]
-
-
-def get_noise_dataset(channel, denoise = False):
-    win_length = 2000
-    shift = 0
-    if denoise:
-        positions_single = torch.load(
-            f"/media/mp274748/Transcend/data/LSC/RUN9/noise_file_RUN9/pup_n1-d0_000813_20230628T161508_{channel:03}_000_bis.pt").numpy()
-        noise_pred = np.load(f"/media/mp274748/Transcend/data/LSC/RUN9/noise_file_RUN9/pulses_pred_d0_{channel:03}.npy")
-        data_noise = BinaryDatasetDenoised(find_file(f"000813_20230628T161508_{channel:03}_???.bin"), noise_pred[:,
-                                                                                                      noise_pred.shape[
-                                                                                                          1] // 2 - win_length // 2 - shift:
-                                                                                                      noise_pred.shape[
-                                                                                                          1] // 2 + win_length // 2 - shift] *
-                                           Global_stds[channels.index(channel)], win_length, positions_single,
-                                           win_shift = win_length // 2 - shift)
-    else:
-        dataset_single_name = "pup_n1-d0_000813_20230628T161508"
-        file_path_single, path_pos_single = find_files(dataset_single_name, channel, pos_prefix = "_bis",
-                                                       file_suffix = "", differenciate = False,
-                                                       specific_subdir = "RUN9_pulse_injected_new/")
-        pos_file_single = np.loadtxt(path_pos_single, ndmin=2)[:15000]
-        positions_single = (pos_file_single[:, 0] // 4).astype(int)
-        data_noise = BinaryDataset(find_file(f"000813_20230628T161508_{channel:03}_???.bin"), win_length,
-                                   positions_single, win_shift = win_length // 2 - shift)
-    return data_noise
