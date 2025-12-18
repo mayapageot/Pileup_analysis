@@ -93,8 +93,8 @@ def plot_biais_vs_dt(PSD_single, PSD_pileup, dt_pileup, cut=0.9, bins=40):
     Returns:
         tuple: A tuple containing the figure, main axis, and inset axis objects.
     """
-    dt_pileup_sel = dt_pileup[np.abs(PSD_pileup - 1) < 0.02]
-    PSD_double_sel = PSD_pileup[np.abs(PSD_pileup - 1) < 0.02]
+    dt_pileup_sel = dt_pileup[np.abs(PSD_pileup - 1) < 0.05]
+    PSD_double_sel = PSD_pileup[np.abs(PSD_pileup - 1) < 0.05]
     Biais = 1 - PSD_double_sel
 
     bin_means, bin_edges, binnumber = binned_statistic(
@@ -125,7 +125,7 @@ def plot_biais_vs_dt(PSD_single, PSD_pileup, dt_pileup, cut=0.9, bins=40):
     hist,_,_ = ax2.hist(
         1 - PSD_single,
         bins=100,
-        range=(-0.003, 0.015),
+        range=(-0.008, 0.04),
         density=True,
         alpha=0.7,
         label="Single Simulated Pulses",
@@ -135,7 +135,7 @@ def plot_biais_vs_dt(PSD_single, PSD_pileup, dt_pileup, cut=0.9, bins=40):
     ax2.hist(
         1 - PSD_pileup,
         bins=100,
-        range=(-0.003, 0.015),
+        range=(-0.008, 0.04),
         density=True,
         alpha=0.7,
         label="Pile-up Simulated Pulses",
@@ -584,5 +584,130 @@ def plot_meanpulse_fit_freq(meanpulse, y,axs=None, labels=None):
     ax1.set_ylim(1e-4,1e2)
     ax1.set_xlabel("Frequency (Hz)")
     ax1.set_ylabel("Amplitude")
+def plot_PSD_distribution(
+    PSD_single, PSD_pileup,
+    muY, sigmaY, ratio_distribution,
+    N_sigma=3
+):
+    from scipy.stats import norm
+
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1,
+        figsize=(16, 6),
+        sharex=True,
+        gridspec_kw={'height_ratios': [3, 1], 'hspace': 0}
+    )
+
+    # -----------------------
+    # Single events
+    # -----------------------
+    cut = np.percentile(PSD_single.real, 10)
+
+    hist_single, bins_single = np.histogram(
+        PSD_single, bins=200, range=(0.99, 1.01), density=True
+    )
+    A_single = 0.5 * (bins_single[1:] + bins_single[:-1])
+
+    mu = muY[0, 0].numpy()
+    sigma = sigmaY[0, 0].numpy()
+    pdf_single = norm.pdf(A_single, mu, sigma)
+
+    ax1.plot(
+        A_single, hist_single,
+        drawstyle='steps-mid',
+        color='tab:blue',
+        alpha=0.6,
+        lw=1.5,
+        label='Single events (MC)'
+    )
+    ax1.plot(
+        A_single, pdf_single,
+        color='tab:blue',
+        lw=2.5,
+        label='Single events (model)'
+    )
+
+
+    # -----------------------
+    # Pileup events
+    # -----------------------
+    hist_pu, bins_pu = np.histogram(
+        PSD_pileup, bins=200, range=(0.96, 1.01), density=True
+    )
+    A_pu = 0.5 * (bins_pu[1:] + bins_pu[:-1])
+
+    ax1.plot(
+        A_pu, hist_pu,
+        drawstyle='steps-mid',
+        color='tab:orange',
+        alpha=0.6,
+        lw=1.5,
+        label='Pileup events (MC)'
+    )
+
+    pdf_pu = np.sum(
+        norm.pdf(A_pu[None, None, :], muY[:, :, None], sigmaY[:, :, None])
+        * ratio_distribution[:, None, None],
+        axis=(0, 1)
+    ).real
+    pdf_pu /= np.trapz(pdf_pu, A_pu)
+
+    ax1.plot(
+        A_pu, pdf_pu,
+        color='tab:orange',
+        lw=2.5,
+        label='Pileup events (model)'
+    )
+
+    ax1.axvline(
+        cut, color='tab:red', ls='--', lw=1.5,
+        label='10th percentile cut'
+    )
+    ax1.axvline(
+        mu - N_sigma * sigma,
+        color='tab:green', ls='-.', lw=1.5,
+        label=rf'$\mu - {N_sigma:.2f}\sigma$'
+    )
+
+    # -----------------------
+    # Residuals
+    # -----------------------
+    ax2.axhline(0, color='k', lw=1, alpha=0.6)
+
+    ax2.plot(
+        A_single, pdf_single - hist_single,
+        color='tab:blue',
+        lw=1.5,
+        label='Model − MC (single)'
+    )
+    ax2.plot(
+        A_pu, pdf_pu - hist_pu,
+        color='tab:orange',
+        lw=1.5,
+        label='Model − MC (pileup)'
+    )
+
+    res_max = max(
+        np.abs(pdf_single - hist_single).max(),
+        np.abs(pdf_pu - hist_pu).max()
+    )
+    ax2.set_ylim(-1.1 * res_max, 1.1 * res_max)
+
+    # -----------------------
+    # Final formatting
+    # -----------------------
+    ax1.set_xlim(0.96, 1.01)
+    ax1.set_ylabel("Probability density")
+    ax2.set_ylabel("Residual")
+    ax2.set_xlabel("PSD")
+
+    ax1.legend(frameon=False, ncol=3)
+    ax2.legend(frameon=False)
+
+    ax1.grid(axis='y', alpha=0.3)
+    ax2.grid(axis='y', alpha=0.3)
+
+    plt.show()
+
 if __name__ == "__main__":
     plot_m1_2_all_channel()
