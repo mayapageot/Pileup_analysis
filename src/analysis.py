@@ -144,7 +144,7 @@ def compute_sigma_ratio_order4(mu1, mu2, var1, var2, cov12):
 
 
 def compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, pulse_center_ratio=0.5,
-                     return_all=False, order=2,
+                     return_all=False, order=2, use_interp=False,
                      jitter_max=20, interpolation_range=5):
     """
         Computes the mean (mu) and standard deviation (sigma) of the ratio of two signals
@@ -193,26 +193,29 @@ def compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, pulse
 
     s_pileup_2 = (1 - r[:, None, None]) * s_H_2 + r[:, None, None] * s_H_delayed_2[None, :, :]
 
-    s_pileup_1 = torch.roll(s_pileup_1.real, shifts = target_index, dims = -1)
-    s_pileup_2 = torch.roll(s_pileup_2.real, shifts = target_index, dims = -1)
+    if use_interp:
+        s_pileup_1 = torch.roll(s_pileup_1.real, shifts = target_index, dims = -1)
+        s_pileup_2 = torch.roll(s_pileup_2.real, shifts = target_index, dims = -1)
 
-    sub1 = s_pileup_1[..., lo:hi]
-    sub2 = s_pileup_2[..., lo:hi]
-    max_idx1 = sub1.argmax(dim = -1) + lo
-    max_idx2 = sub2.argmax(dim = -1) + lo
+        sub1 = s_pileup_1[..., lo:hi]
+        sub2 = s_pileup_2[..., lo:hi]
+        max_idx1 = sub1.argmax(dim = -1) + lo
+        max_idx2 = sub2.argmax(dim = -1) + lo
 
-    idx1 = max_idx1[..., None] + offs
-    idx2 = max_idx2[..., None] + offs
+        idx1 = max_idx1[..., None] + offs
+        idx2 = max_idx2[..., None] + offs
 
-    y1 = s_pileup_1.gather(-1, idx1)
-    y2 = s_pileup_2.gather(-1, idx2)
+        y1 = s_pileup_1.gather(-1, idx1)
+        y2 = s_pileup_2.gather(-1, idx2)
 
-    interp1 = cubic_interp1d_scipy(y1, fine_x)
-    interp2 = cubic_interp1d_scipy(y2, fine_x)
+        interp1 = cubic_interp1d_scipy(y1, fine_x)
+        interp2 = cubic_interp1d_scipy(y2, fine_x)
 
-    mu1 = interp1.max(dim = -1).values
-    mu2 = interp2.max(dim = -1).values
-
+        mu1 = interp1.max(dim = -1).values
+        mu2 = interp2.max(dim = -1).values
+    else:
+        mu1 = s_pileup_1.real.max(dim = -1).values
+        mu2 = s_pileup_2.real.max(dim = -1).values
     muY = mu1 / mu2
     var1, var2, cov12 = compute_vars(S2_over_nps, f1, f2)
     if order == 4:
@@ -241,7 +244,7 @@ def compute_A(muY, sigmaY, N_sigma=1.28):
 
 
 def compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distribution,
-              pulse_center_ratio=0.5, N_sigma=1.28, full_output=False):
+              pulse_center_ratio=0.5, N_sigma=1.28, use_interp=False ,full_output=False):
     """
     Computes the J metric for the given inputs.
 
@@ -267,7 +270,7 @@ def compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distri
                 - torch.Tensor: Sigma Y values.
     """
     muY, sigmaY = compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp,
-                                   pulse_center_ratio=pulse_center_ratio)
+                                   pulse_center_ratio=pulse_center_ratio, use_interp=use_interp)
     A = compute_A(muY, sigmaY, N_sigma=N_sigma)
     if full_output:
         return torch.mean(A*ratio_distribution[:, None]).real, A, muY, sigmaY
@@ -344,12 +347,16 @@ def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_
         optimizer.step()
 
         # Uncomment the following lines to print progress every 100 steps
-        if step % 100 == 0 and verbose:
+        if step % 10 == 0 and verbose:
             print(f"Step {step}: J = {J.item():.6f}")
     print(f"Final: J = {J.item():.6f}")
     # Convert optimized filters to numpy arrays
     f1 = np.abs(f1.detach().cpu().numpy())
     f2 = np.abs(f2.detach().cpu().numpy())
+    norm1 = torch.mean(torch.abs(f1 * H_unit * S))
+    norm2 = torch.mean(torch.abs(f2 * H_unit * S))
+    f1 = f1 / norm1
+    f2 = f2 / norm2
     return f1, f2, J_values
 
 

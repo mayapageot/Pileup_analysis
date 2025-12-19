@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 import ast
 import torch
 import struct
-from src.analysis import compute_H
 from scipy.interpolate import interp1d
 load_dotenv()
 main_dir = os.getenv("DATA_PATH")
@@ -151,80 +150,88 @@ class BinaryDatasetDenoised(BinaryDataset):
 
 
 class CachedBinaryDataset(Dataset):
-    def __init__(self, file_path, win_length, positions,
-                 win_shift = 0, device = "cpu", dtype = np.uint32):
+    def __init__(self, file_path, win_length, positions, win_shift_start=0,
+                 win_shift=0, device="cpu", dtype=np.uint32):
         """
-            Initializes the CachedBinaryDataset.
+        Initializes the CachedBinaryDataset.
 
-            Args:
-                file_path (str): Path to the binary file to be loaded.
-                win_length (int): Length of each data window to extract.
-                positions (array-like): List of starting positions in the binary file for windows.
-                win_shift (int, optional): Shift applied to window start positions. Defaults to 0.
-                device (str, optional): Device to store the data (e.g., "cpu" or "cuda"). Defaults to "cpu".
-                dtype (numpy dtype, optional): Data type for reading binary data. Defaults to np.uint32.
+        Args:
+            file_path (str): Path to the binary file to be loaded.
+            win_length (int): Length of each data window to extract.
+            positions (array-like): List of starting positions in the binary file for windows.
+            win_shift (int, optional): Shift applied to window start positions. Defaults to 0.
+            device (str, optional): Device to store the data (e.g., "cpu" or "cuda"). Defaults to "cpu".
+            dtype (numpy dtype, optional): Data type for reading binary data. Defaults to np.uint32.
         """
         self.win_length = int(win_length)
+        self.win_shift = int(win_shift)
         self.n_windows = len(positions)
         self.positions = positions
+
         header = read_bin_header(file_path)
         self.samplingRate = header["samplingRate"]
         self.adcRange = header["adcRange"]
-        self.win_shift = int(win_shift)
 
         # Load full file into memory (skip first 4 bytes)
-        full_raw = np.memmap(file_path, dtype = dtype, mode = 'r')
+        full_raw = np.memmap(file_path, dtype=dtype, mode='r')[1:]  # skip first entry
 
-        # Skip the first entry like before:
-        full_raw = full_raw[1:]
+        # Build 2D indices for full windows
+        starts = positions.astype(np.int64)
+        idx = starts[:, None] + np.arange(win_length, dtype=np.int64)[None, :] + win_shift_start
+        raw_windows = full_raw[idx]
 
-        # Apply shift
-        starts = positions.astype(np.int64) - win_shift
-
-        # ---- VECTORIZED EXTRACTION (no loops) ----
-        # Build 2D indices:
-        # shape = (n_windows, win_length)
-        idx = starts[:, None] + np.arange(self.win_length, dtype = np.int64)[None, :]
-
-        # Extract every window at once
-        raw_windows = full_raw[idx]  # FAST: direct 2D fancy indexing
-
-        # ---- VECTORIZED PROCESSING ----
-        # Right shift all values at once
+        # Vectorized processing
         shifted = np.right_shift(raw_windows, 8).astype(np.float32)
-
-        # Normalize all windows at once
         all_windows = (shifted / (2 ** 23)) * self.adcRange - self.adcRange
 
         # Convert to torch
         self.data = torch.from_numpy(all_windows)
+        self.orignal_winlength = self.data.shape[1]
         if device == "cuda":
-            self.data = self.data.cuda(non_blocking = True)
+            self.data = self.data.cuda(non_blocking=True)
 
-    def set_win_length(self, win_length, win_shift = 0):
-        if win_length == self.win_length and win_shift == self.win_shift:
-            return
-        win_length = int(win_length)
-        start = self.win_shift - win_shift
-        if start + win_length > self.win_length:
-            raise ValueError(f"Requested window length {win_length} exceeds max length {self.win_length}")
-        self.data = self.data[:, start:start + win_length]
-        self.win_length = win_length
-        self.win_shift = win_shift
+    def set_win_length(self, win_length):
+        self.win_length = int(win_length)
+        start = self.orignal_winlength // 2 - self.win_length // 2 + self.win_shift
+        if start < 0 or start + self.win_length > self.orignal_winlength:
+            raise ValueError(f"Requested window (start={start}, length={self.win_length}) exceeds "
+                             f"max length {self.orignal_winlength}")
+
+    def set_win_shift(self, win_shift):
+        self.win_shift = int(win_shift)
+        start = self.orignal_winlength // 2 - self.win_length // 2 + self.win_shift
+        if start < 0 or start + self.win_length > self.orignal_winlength:
+            raise ValueError(f"Requested window (start={start}, length={self.win_length}) exceeds "
+                             f"max length {self.orignal_winlength}")
+
+    def set_fracshift(self, fracshift):
+        self.set_win_shift(int(self.win_length*fracshift))
 
     def get_batch(self, batch_indices):
-        return self.data[batch_indices]
+        start = self.orignal_winlength // 2 - self.win_length // 2 + self.win_shift
+        if start < 0 or start + self.win_length > self.orignal_winlength:
+            raise ValueError(f"Requested window (start={start}, length={self.win_length}) exceeds "
+                             f"max length {self.orignal_winlength}")
+        end = start + self.win_length
+        return self.data[batch_indices, start:end]
 
     def __len__(self):
         return self.n_windows
 
     def __getitem__(self, idx):
-        return self.data[idx]
+        start = self.orignal_winlength // 2 - self.win_length // 2 + self.win_shift
+        if start < 0 or start + self.win_length > self.orignal_winlength:
+            raise ValueError(f"Requested window (start={start}, length={self.win_length}) exceeds "
+                             f"max length {self.orignal_winlength}")
+        end = start + self.win_length
+        return self.data[idx, start:end]
+
 
 
 class CachedBinaryDataset_withgenerated(CachedBinaryDataset):
     def __init__(self, file_path, position_file, win_length, pulse = None,
-                 n_windows = 12288, win_shift = 0, device = "cpu", dtype = np.uint32):
+                 n_windows = 12288, win_shift_start=0, win_shift=0, injection_fraction = 0.5,
+                 device = "cpu", dtype = np.uint32):
         """
             Initializes the CachedBinaryDataset_withgenerated class.
 
@@ -241,8 +248,8 @@ class CachedBinaryDataset_withgenerated(CachedBinaryDataset):
         pos_file = np.loadtxt(position_file, ndmin=2)[:n_windows]
         positions = (pos_file[:, 0] // 4).astype(int)
         super().__init__(file_path, win_length, positions,
-                         win_shift, device, dtype)
-        time = np.arange(-self.win_length // 2, self.win_length // 2)
+                         win_shift_start,win_shift, device, dtype)
+        time = np.arange(0, self.win_length) - int(injection_fraction * self.win_length)
         if callable(pulse):
             pulse_inter = pulse
         elif pulse is not None:
@@ -495,6 +502,7 @@ def get_channel_specs(channel, n_deriv = 1, window_fct = np.ones, nps_name = "ra
             - nps (numpy.ndarray): Baseline spectrum.
             - w (numpy.ndarray): frequency array.
     """
+    from src.analysis import compute_H
     # Load baseline spectrum
     meas_name = "000813_20230628T161508"
 

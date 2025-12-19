@@ -29,7 +29,7 @@ for channel, StdCut in zip(channels, StdCuts):
         data_noise.set_win_length(window_size, win_shift=window_size // 2)
         nps = an.create_NPS_torch(data_noise,n_deriv=0,rms_thr=StdCut, batch_size=2048, window_fct=np.hanning,
                                       use_loader=False,device=device)
-        directory_path = f"{BASE}/results/NPS_study/"
+        directory_path = f"{BASE}/outputs/NPS_study/"
         os.makedirs(directory_path, exist_ok=True)
-        np.save(f"{BASE}/results/NPS_study/NPS_channel{channel}_win{window_size}_cut{StdCut}_{meas_name}.npy",
+        np.save(f"{BASE}/outputs/NPS_study/NPS_channel{channel}_win{window_size}_cut{StdCut}_{meas_name}.npy",
                 nps)

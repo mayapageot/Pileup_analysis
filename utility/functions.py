@@ -164,3 +164,18 @@ def align_waveforms(pulses, shift):
     aligned[mask] = pulses[torch.arange(N, device = pulses.device).unsqueeze(1).repeat(1, L)[mask],
     shifted_idx_clipped[mask]]
     return aligned
+
+
+import numpy as np
+def asymmetric_hann(N, p):
+    n = np.arange(N)
+    n_p = p * (N - 1)
+    w = np.zeros(N)
+
+    left = n <= n_p
+    right = n > n_p
+
+    w[left] = 0.5 * (1 - np.cos(np.pi * n[left] / n_p))
+    w[right] = 0.5 * (1 + np.cos(np.pi * (n[right] - n_p) / ((N - 1) - n_p)))
+
+    return w

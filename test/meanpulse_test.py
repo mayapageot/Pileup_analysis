@@ -1,29 +1,21 @@
 import sys
 from pathlib import Path
 # Add src to Python path dynamically
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-import time
+BASE = Path(__file__).resolve().parent.parent
+sys.path.append(str(BASE))
 import numpy as np
 import src.analysis as an
 import src.dataset as ds
 import src.simulation as sim
 from utility.double_beta_spectrum import pdf_ratio2b
 import torch
-from torch.utils.data import DataLoader
-from scipy.interpolate import interp1d
 from scipy.stats import norm
 import os
-from scipy.optimize import curve_fit
 # Ensure we have GPU available
-BASE = Path(__file__).resolve().parent.parent
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 StdCuts = [0.0003, 0.0004, 0.0008, 0.0006, 0.0012, 0.0007, 0.00035, 0.0025]
 channels = [3, 5, 9, 11, 13, 15, 17, 19]
-# channels = [11, 13, 15]
-# channels = [11]
-grid_Ns = [i * 10 for i in range(1, 20)]
 fp_model = lambda *params: sim.filtered_pulse_model(*params, fc = 2500, order = 6)
 
 BIs = []
@@ -34,13 +26,6 @@ channel_data = []
 for channel, StdCut in zip(channels, StdCuts):
     window_size = 4096
     meas_name = "000813_20230628T161508"
-    # meanpulse = np.fromfile(ds.find_file(f"{meas_name}_{channel:03}_???.bin_edmean.bin",
-    #                                      specific_subdir="RUN9_pulse_injected_new/"))
-    # fp_model = lambda *params: sim.filtered_pulse_model(*params, fc=2500, order=6)
-    # t = np.arange(len(meanpulse)) / 1e4
-    # p0 = [5.47e+00, 2.49e-01, 1.30e-03, 6.88e-04, 4.16e-03, 8.61e-01]
-    # popt, pcov = curve_fit(fp_model, t, meanpulse, p0=p0, maxfev=10000)
-    # fitted_pulse_function = lambda t: sim.filtered_pulse_model(t * 1e-4 + popt[1], *popt, fc=2500, order=6)
     fitted_pulse_function = np.fromfile(ds.find_file(f"ch{channel}_fit*.bin",
                                                      specific_subdir = "RUN9_pulse_injected_new/"))
     dataset_single_name = "pup_n1-d0_000813_20230628T161508"
@@ -57,20 +42,7 @@ for channel, StdCut in zip(channels, StdCuts):
                                                        pulse = fitted_pulse_function,
                                                        n_windows = 12288, win_shift = 0)
 
-    data_noise, _ = ds.create_data_sets(channel, {"data_name": ["000813_20230628T161508"],
-                                                  "pos_name": ["pup_n1-d0_000813_20230628T161508"],
-                                                  "specific_subdir": [""],
-                                                  "full_info": [False]},
-                                        win_length = window_size, shift = 0, pos_prefix = "_bis",
-                                        len_data = 2 ** 13 + 2 ** 12, cached = True)
-
-    nps_bis = an.create_NPS_torch(data_noise,
-                                  n_deriv = 0,
-                                  rms_thr = StdCut,
-                                  batch_size = 2048,
-                                  window_fct = np.hanning,
-                                  use_loader = False,
-                                  device = device)
+    nps_bis = np.load(f"{BASE}/outputs/NPS_study/NPS_channel{channel}_win{window_size}_{meas_name}.npy")
     nps_bis *= (8./3.)  # Adjust for Hann window effect
     acceptance = 0.9
     n_deriv = 0
