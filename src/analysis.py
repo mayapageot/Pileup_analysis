@@ -353,10 +353,6 @@ def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_
     # Convert optimized filters to numpy arrays
     f1 = np.abs(f1.detach().cpu().numpy())
     f2 = np.abs(f2.detach().cpu().numpy())
-    norm1 = torch.mean(torch.abs(f1 * H_unit * S))
-    norm2 = torch.mean(torch.abs(f2 * H_unit * S))
-    f1 = f1 / norm1
-    f2 = f2 / norm2
     return f1, f2, J_values
 
 

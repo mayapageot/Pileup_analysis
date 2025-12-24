@@ -7,6 +7,7 @@ import numpy as np
 import src.analysis as an
 import src.dataset as ds
 import src.simulation as sim
+import utility.functions as fn
 from utility.double_beta_spectrum import pdf_ratio2b
 import torch
 from scipy.stats import norm
@@ -73,7 +74,7 @@ for channel, StdCut in zip(channels, StdCuts):
         meanpulse = an.build_mean_pulse(data_single, rms_thr=StdCut, batch_size=2048, device=device,
                                         pulse_center_ratio=pulse_center_ratio,
                                          use_loader=False).cpu().numpy()
-        _, _, H_unit = an.compute_H(meanpulse, nps, np.hanning)
+        _, _, H_unit = an.compute_H(meanpulse, nps, lambda x: fn.asymmetric_hann(x, pulse_center_ratio))
         H_unit_torch = torch.tensor(H_unit, dtype=torch.cfloat, device=device)
         meanpulse = an.build_mean_pulse_filteralignement(data_single, rms_thr=StdCut,
                                                          pulse_center_ratio=pulse_center_ratio,
@@ -81,7 +82,7 @@ for channel, StdCut in zip(channels, StdCuts):
                                                          device=device, use_loader=False).cpu().numpy()
         meanpulse /= np.max(meanpulse)
 
-        S, w, H_unit = an.compute_H(meanpulse, nps, np.hanning)
+        S, w, H_unit = an.compute_H(meanpulse, nps, lambda x: fn.asymmetric_hann(x, pulse_center_ratio))
 
         S_torch = torch.tensor(S, dtype = torch.cfloat, device = device)
         H_unit_torch = torch.tensor(H_unit, dtype = torch.cfloat, device = device)
@@ -118,7 +119,7 @@ for channel, StdCut in zip(channels, StdCuts):
             H_unit_torch,
             f1_t,
             f2_t,
-            window_fct=np.hanning,
+            window_fct= lambda x: fn.asymmetric_hann(x, pulse_center_ratio),
             n_deriv=0,
             compute_uncertainty=True,
             batch_size=2048 * 2,
@@ -133,8 +134,6 @@ for channel, StdCut in zip(channels, StdCuts):
         pulse_center_ratios_data.append(pulse_center_ratio)
         print(f"Channel {channel}, window size {window_size}, pulse center ratio {pulse_center_ratio}, "
               f"J: {J:.4e}, 1-rp: {1 - rp:.4f}, BI: {BI:.4e} ± {sigma_BI:.4e}")
-        break
-    break
 BIs = np.array(BIs)
 BI_uncertainties = np.array(BI_uncertainties)
 rps = np.array(rps)
