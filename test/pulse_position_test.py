@@ -96,17 +96,18 @@ for channel, StdCut in zip(channels, StdCuts):
         f2_t = torch.tensor(f2_opt, dtype = torch.float32, device = device)
         f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
                                                        signal_amp_torch, ratio_distribution_torch, N_sigma=N_sigma,
-                                                       n_trials=500, verbose=False,f1_init = f1_t, f2_init = f2_t)
+                                                       n_trials=500, verbose=False,f1_init = f1_t, f2_init = f2_t,
+                                                       use_interp = True)
         f1_t = torch.tensor(f1_opt, dtype = torch.float32, device = device)
         f2_t = torch.tensor(f2_opt, dtype = torch.float32, device = device)
 
         directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/frac_test/"
         os.makedirs(directory_path, exist_ok=True)
         np.save(directory_path +
-                f"functions_eff{int(acceptance * 100):d}_frac{pulse_center_ratio}_4Pole_Bessel",
+                f"functions_eff{int(acceptance * 100):d}_frac{pulse_center_ratio}_4Pole_Bessel_interp_train",
                 np.array([f1_opt, f2_opt]))
         np.save(directory_path +
-                f"J_{int(acceptance * 100):d}_frac{pulse_center_ratio}_4Pole_Bessel",
+                f"J_{int(acceptance * 100):d}_frac{pulse_center_ratio}_4Pole_Bessel_interp_train",
                 np.array(J_values))
 
         S_H_delayed, S_H, S2_over_nps = an.precompute_constants(S_torch, H_unit_torch, w_torch, t_torch, nps_torch)
@@ -145,7 +146,7 @@ data = np.column_stack([channel_data, pulse_center_ratios_data, BIs, BI_uncertai
                         1 - rps, rp_uncertainties, Js])
 header = "channel,pulse_center_ratio,BI,BI_uncertainty,1-rp,rp_uncertainty,J"
 np.savetxt(
-    f"{BASE}/outputs/Systematics/BI_frac_4Pole_Bessel.csv",
+    f"{BASE}/outputs/Systematics/BI_frac_4Pole_Bessel_interp_train.csv",
     data,
     delimiter=",",
     header=header,

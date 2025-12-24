@@ -278,7 +278,7 @@ def compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distri
 
 
 def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_sigma = 1.28, n_trials = 1000,
-                     pulse_center_ratio=0.5, f1_init=None, f2_init=None, verbose = True):
+                     pulse_center_ratio=0.5, f1_init=None, f2_init=None, verbose = True, use_interp = False):
     """
     Optimizes two filters (f1 and f2) to maximize the J metric using gradient-based optimization.
 
@@ -339,7 +339,7 @@ def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_
         f2 = f2 / norm2
         # Compute the J metric
         J = compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distribution, N_sigma = N_sigma,
-                      pulse_center_ratio=pulse_center_ratio)
+                      pulse_center_ratio=pulse_center_ratio, use_interp=use_interp)
         J_values.append(J.item())  # Store the current J value
 
         # Backpropagation and update filter parameters
