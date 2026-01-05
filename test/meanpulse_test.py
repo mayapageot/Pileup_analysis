@@ -26,23 +26,24 @@ Js = []
 channel_data = []
 meanpulse_type_data = []
 
-fit_parameters = np.loadtxt("../outputs/fits/pulse_fit_params.csv", delimiter = ',', skiprows = 1)
+fit_parameters = np.loadtxt(f"{BASE}/outputs/fits/pulse_fit_params.csv", delimiter = ',', skiprows = 1)
 
 for channel, StdCut in zip(channels, StdCuts):
     window_size = 4096
     meas_name = "000813_20230628T161508"
     for meanpulse_type in ["raw","fit","fit_bessel"]:
         if meanpulse_type == "raw":
-            fitted_pulse_function = np.fromfile(ds.find_file(f"ch{channel}_meanpulse.bin",
-                                                             specific_subdir = "RUN9_pulse_injected_new/"))
+            meanpulse = np.fromfile(ds.find_file(f"{meas_name}_{channel:03}_???.bin_edmean.bin",
+                                                 specific_subdir="RUN9_pulse_injected_new/"))
+            fitted_pulse_function = meanpulse
         elif meanpulse_type == "fit":
             bessel_order = 0
             popt = fit_parameters[(fit_parameters[:, 0] == channel) & (fit_parameters[:, 1] == bessel_order), 2:][0]
-            fitted_pulse_function = sim.make_pulse_pole_zero_bessel_ct(1, bessel_order, 2500, *popt)
+            fitted_pulse_function = lambda x: sim.make_pulse_pole_zero_bessel_ct(1, bessel_order, 2500, *popt)(x*1e-4)
         elif meanpulse_type == "fit_bessel":
             bessel_order = 6
             popt = fit_parameters[(fit_parameters[:, 0] == channel) & (fit_parameters[:, 1] == bessel_order), 2:][0]
-            fitted_pulse_function = sim.make_pulse_pole_zero_bessel_ct(1, bessel_order, 2500, *popt)
+            fitted_pulse_function = lambda x: sim.make_pulse_pole_zero_bessel_ct(1, bessel_order, 2500, *popt)(x*1e-4)
 
         dataset_single_name = "pup_n1-d0_000813_20230628T161508"
         file_path_single, path_pos_single = ds.find_files(meas_name, dataset_single_name, channel,
@@ -70,12 +71,12 @@ for channel, StdCut in zip(channels, StdCuts):
         # meanpulse_bis = fitted_pulse_function(np.arange(-window_size//2,window_size//2))
         mean_pulse = an.build_mean_pulse(data_single, rms_thr = StdCut, batch_size = 2048, device = device,
                                          use_loader = False).cpu().numpy()
-        S, w, H_unit = ds.compute_H(mean_pulse, nps_bis, np.hanning)
+        S, w, H_unit = an.compute_H(mean_pulse, nps_bis, np.hanning)
         H_unit_torch = torch.tensor(H_unit, dtype = torch.cfloat, device = device)
         mean_pulse_filtered = an.build_mean_pulse_filteralignement(data_single, rms_thr = StdCut,
                                                                    H = H_unit_torch, batch_size = 2048,
                                                                    device = device, use_loader = False).cpu().numpy()
-        S, w, H_unit = ds.compute_H(mean_pulse_filtered, nps_bis, np.hanning)
+        S, w, H_unit = an.compute_H(mean_pulse_filtered, nps_bis, np.hanning)
 
         # Convert all arrays to torch tensors on GPU
         N_sigma = norm.ppf(1 - (1 - acceptance) * 100 / 100)
@@ -106,7 +107,10 @@ for channel, StdCut in zip(channels, StdCuts):
         np.save(directory_path +
                 f"channel{channel}_J_{int(acceptance * 100):d}_meanpulse_test_{meanpulse_type}",
                 np.array(J_values))
-
+        # f1_opt, f2_opt = np.load(
+        #     f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/meanpulse_test/" +
+        #     f"channel{channel}_functions_eff{int(acceptance * 100):d}_meanpulse_test_{meanpulse_type}.npy"
+        # )
         f1_t = torch.tensor(f1_opt, dtype = torch.float32, device = device)
         f2_t = torch.tensor(f2_opt, dtype = torch.float32, device = device)
 
@@ -139,23 +143,41 @@ for channel, StdCut in zip(channels, StdCuts):
         Js.append(float(J))
         channel_data.append(channel)
         meanpulse_type_data.append(meanpulse_type)
+        BIs_np = np.array(BIs)
+        BI_uncertainties_np = np.array(BI_uncertainties)
+        rps_np = np.array(rps)
+        rp_uncertainties_np = np.array(rp_uncertainties)
+        Js_np = np.array(Js)
+        channel_data_np = np.array(channel_data)
+        meanpulse_type_data_np = np.array(meanpulse_type_data)
+        # Create a structured array
+        data = np.zeros(BIs_np.shape[0], dtype=[
+            ('channel', 'U32'),
+            ('meanpulse_type', 'U32'),
+            ('BI', float),
+            ('BI_uncertainty', float),
+            ('1-rp', float),
+            ('rp_uncertainty', float),
+            ('J', float)
+        ])
 
+        data['channel'] = channel_data_np
+        data['meanpulse_type'] = meanpulse_type_data_np
+        data['BI'] = BIs_np
+        data['BI_uncertainty'] = BI_uncertainties_np
+        data['1-rp'] = 1 - rps_np
+        data['rp_uncertainty'] = rp_uncertainties_np
+        data['J'] = Js_np
 
-BIs = np.array(BIs)
-BI_uncertainties = np.array(BI_uncertainties)
-rps = np.array(rps)
-rp_uncertainties = np.array(rp_uncertainties)
-Js = np.array(Js)
-channel_data = np.array(channel_data)
-meanpulse_type_data = np.array(meanpulse_type_data)
-data = np.column_stack([channel_data, meanpulse_type_data, BIs, BI_uncertainties,
-                        1 - rps, rp_uncertainties, Js])
-header = "channel,meanpulse_type,BI,BI_uncertainty,1-rp,rp_uncertainty,J"
-np.savetxt(
-    f"{BASE}/outputs/Systematics/BI_meanpulse_test.csv",
-    data,
-    delimiter=",",
-    header=header,
-    comments=""
-)
-print(f"BI saved at {BASE}/outputs/Systematics/BI_meanpulse_test.csv")
+        header = "channel,meanpulse_type,BI,BI_uncertainty,1-rp,rp_uncertainty,J"
+
+        np.savetxt(
+            f"{BASE}/outputs/Systematics/BI_meanpulse_test.csv",
+            data,
+            delimiter=",",
+            header=header,
+            comments="",
+            fmt="%s,%s,%.18e,%.18e,%.18e,%.18e,%.18e"
+        )
+
+        print(f"BI saved at {BASE}/outputs/Systematics/BI_meanpulse_test.csv")
