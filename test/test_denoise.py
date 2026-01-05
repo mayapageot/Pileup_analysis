@@ -32,7 +32,7 @@ for channel, StdCut in zip(channels, StdCuts):
     dataset_single_name = "pup_n1-d0_000813_20230628T161508"
     file_path_single, path_pos_single = ds.find_files(meas_name, dataset_single_name, channel,
                                                       specific_subdir = "RUN9_pulse_injected_new/")
-    data_single = ds.CachedBinaryDataset_withgenerated(file_path_single, path_pos_single, 4096,
+    data_single = ds.CachedBinaryDataset_withgenerated(file_path_single, path_pos_single, window_size,
                                                        pulse = fitted_pulse_function,
                                                        n_windows = 12288, win_shift = 0)
     nps = np.fromfile(ds.find_file(f"channel{channel}/dif/denoised_noise_d0.bin_spec.bin"))
@@ -78,7 +78,7 @@ for channel, StdCut in zip(channels, StdCuts):
     f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
                                                    signal_amp_torch, ratio_distribution_torch, N_sigma = N_sigma,
                                                    n_trials = 500, verbose = False)
-    directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/meanpulse_test/"
+    directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/denoise_test/"
     os.makedirs(directory_path, exist_ok = True)
     np.save(directory_path +
             f"channel{channel}_functions_eff{int(acceptance * 100):d}_denoise_test",
@@ -86,10 +86,6 @@ for channel, StdCut in zip(channels, StdCuts):
     np.save(directory_path +
             f"channel{channel}_J_{int(acceptance * 100):d}_denoise_test",
             np.array(J_values))
-    # f1_opt, f2_opt = np.load(
-    #     f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/meanpulse_test/" +
-    #     f"channel{channel}_functions_eff{int(acceptance * 100):d}_meanpulse_test_{meanpulse_type}.npy"
-    # )
     f1_t = torch.tensor(f1_opt, dtype = torch.float32, device = device)
     f2_t = torch.tensor(f2_opt, dtype = torch.float32, device = device)
 

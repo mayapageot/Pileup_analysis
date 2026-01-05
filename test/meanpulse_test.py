@@ -76,108 +76,109 @@ for channel, StdCut in zip(channels, StdCuts):
         mean_pulse_filtered = an.build_mean_pulse_filteralignement(data_single, rms_thr = StdCut,
                                                                    H = H_unit_torch, batch_size = 2048,
                                                                    device = device, use_loader = False).cpu().numpy()
-        S, w, H_unit = an.compute_H(mean_pulse_filtered, nps_bis, np.hanning)
-
-        # Convert all arrays to torch tensors on GPU
-        N_sigma = norm.ppf(1 - (1 - acceptance) * 100 / 100)
-        S_torch = torch.tensor(S, dtype = torch.cfloat, device = device)
-        H_unit_torch = torch.tensor(H_unit, dtype = torch.cfloat, device = device)
-        w_torch = torch.tensor(w, dtype = torch.cfloat, device = device)
-        nps_torch = torch.tensor(nps_bis, dtype = torch.cfloat, device = device)
-        signal_amp_torch = torch.tensor(signal_amp, dtype = torch.float32, device = device)
-
-        t_min, t_max, N_t = 0, 8e-4, 50
-        r_min, r_max, N_r = 0., .5, 50
-
-        ratio_distribution = pdf_ratio2b(np.linspace(r_min, r_max, N_r))
-        ratio_distribution /= np.mean(ratio_distribution)
-
-        t_torch = torch.linspace(t_min, t_max, N_t, dtype = torch.cfloat, device = device)
-        r_torch = torch.linspace(r_min, r_max, N_r, dtype = torch.cfloat, device = device)
-        ratio_distribution_torch = torch.tensor(ratio_distribution, dtype = torch.cfloat, device = device)
-
-        f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
-                                                       signal_amp_torch, ratio_distribution_torch, N_sigma = N_sigma,
-                                                       n_trials = 500, verbose = False)
-        directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/meanpulse_test/"
-        os.makedirs(directory_path, exist_ok = True)
-        np.save(directory_path +
-                f"channel{channel}_functions_eff{int(acceptance * 100):d}_meanpulse_test_{meanpulse_type}",
-                np.array([f1_opt, f2_opt]))
-        np.save(directory_path +
-                f"channel{channel}_J_{int(acceptance * 100):d}_meanpulse_test_{meanpulse_type}",
-                np.array(J_values))
-        # f1_opt, f2_opt = np.load(
-        #     f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/meanpulse_test/" +
-        #     f"channel{channel}_functions_eff{int(acceptance * 100):d}_meanpulse_test_{meanpulse_type}.npy"
+        np.save(f"{BASE}/outputs/meanpulses_build/channel{channel}_meanpulse_{meanpulse_type}",mean_pulse_filtered)
+        # S, w, H_unit = an.compute_H(mean_pulse_filtered, nps_bis, np.hanning)
+        #
+        # # Convert all arrays to torch tensors on GPU
+        # N_sigma = norm.ppf(1 - (1 - acceptance) * 100 / 100)
+        # S_torch = torch.tensor(S, dtype = torch.cfloat, device = device)
+        # H_unit_torch = torch.tensor(H_unit, dtype = torch.cfloat, device = device)
+        # w_torch = torch.tensor(w, dtype = torch.cfloat, device = device)
+        # nps_torch = torch.tensor(nps_bis, dtype = torch.cfloat, device = device)
+        # signal_amp_torch = torch.tensor(signal_amp, dtype = torch.float32, device = device)
+        #
+        # t_min, t_max, N_t = 0, 8e-4, 50
+        # r_min, r_max, N_r = 0., .5, 50
+        #
+        # ratio_distribution = pdf_ratio2b(np.linspace(r_min, r_max, N_r))
+        # ratio_distribution /= np.mean(ratio_distribution)
+        #
+        # t_torch = torch.linspace(t_min, t_max, N_t, dtype = torch.cfloat, device = device)
+        # r_torch = torch.linspace(r_min, r_max, N_r, dtype = torch.cfloat, device = device)
+        # ratio_distribution_torch = torch.tensor(ratio_distribution, dtype = torch.cfloat, device = device)
+        #
+        # f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
+        #                                                signal_amp_torch, ratio_distribution_torch, N_sigma = N_sigma,
+        #                                                n_trials = 500, verbose = False)
+        # directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/meanpulse_test/"
+        # os.makedirs(directory_path, exist_ok = True)
+        # np.save(directory_path +
+        #         f"channel{channel}_functions_eff{int(acceptance * 100):d}_meanpulse_test_{meanpulse_type}",
+        #         np.array([f1_opt, f2_opt]))
+        # np.save(directory_path +
+        #         f"channel{channel}_J_{int(acceptance * 100):d}_meanpulse_test_{meanpulse_type}",
+        #         np.array(J_values))
+        # # f1_opt, f2_opt = np.load(
+        # #     f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/meanpulse_test/" +
+        # #     f"channel{channel}_functions_eff{int(acceptance * 100):d}_meanpulse_test_{meanpulse_type}.npy"
+        # # )
+        # f1_t = torch.tensor(f1_opt, dtype = torch.float32, device = device)
+        # f2_t = torch.tensor(f2_opt, dtype = torch.float32, device = device)
+        #
+        # S_H_delayed, S_H, S2_over_nps = an.precompute_constants(S_torch, H_unit_torch, w_torch, t_torch, nps_torch)
+        #
+        # f1_t /= torch.mean(f1_t * S_H).real
+        # f2_t /= torch.mean(f2_t * S_H).real
+        #
+        # S_H_delayed, S_H, S2_over_nps = an.precompute_constants(S_torch, H_unit_torch, w_torch, t_torch, nps_torch)
+        # J = an.compute_J(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
+        #                  N_sigma = N_sigma, full_output = False, use_interp = True)
+        # BI, rp, sigma_rp, sigma_BI = an.compute_BI_torch(
+        #     data_pileup,
+        #     data_single,
+        #     acceptance,
+        #     H_unit_torch,
+        #     f1_t,
+        #     f2_t,
+        #     window_fct = np.hanning,
+        #     n_deriv = 0,
+        #     compute_uncertainty = True,
+        #     batch_size = 2048 * 2,
+        #     use_loader = False
         # )
-        f1_t = torch.tensor(f1_opt, dtype = torch.float32, device = device)
-        f2_t = torch.tensor(f2_opt, dtype = torch.float32, device = device)
-
-        S_H_delayed, S_H, S2_over_nps = an.precompute_constants(S_torch, H_unit_torch, w_torch, t_torch, nps_torch)
-
-        f1_t /= torch.mean(f1_t * S_H).real
-        f2_t /= torch.mean(f2_t * S_H).real
-
-        S_H_delayed, S_H, S2_over_nps = an.precompute_constants(S_torch, H_unit_torch, w_torch, t_torch, nps_torch)
-        J = an.compute_J(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
-                         N_sigma = N_sigma, full_output = False, use_interp = True)
-        BI, rp, sigma_rp, sigma_BI = an.compute_BI_torch(
-            data_pileup,
-            data_single,
-            acceptance,
-            H_unit_torch,
-            f1_t,
-            f2_t,
-            window_fct = np.hanning,
-            n_deriv = 0,
-            compute_uncertainty = True,
-            batch_size = 2048 * 2,
-            use_loader = False
-        )
-        print(f"Channel {channel}, window size {window_size}, J: {J:.4e}, 1-rp: {1 - rp:.4f}, BI: {BI:.4e}")
-        BIs.append(float(BI))
-        BI_uncertainties.append(float(sigma_BI))
-        rps.append(float(rp))
-        rp_uncertainties.append(float(sigma_rp))
-        Js.append(float(J))
-        channel_data.append(channel)
-        meanpulse_type_data.append(meanpulse_type)
-        BIs_np = np.array(BIs)
-        BI_uncertainties_np = np.array(BI_uncertainties)
-        rps_np = np.array(rps)
-        rp_uncertainties_np = np.array(rp_uncertainties)
-        Js_np = np.array(Js)
-        channel_data_np = np.array(channel_data)
-        meanpulse_type_data_np = np.array(meanpulse_type_data)
-        # Create a structured array
-        data = np.zeros(BIs_np.shape[0], dtype=[
-            ('channel', 'U32'),
-            ('meanpulse_type', 'U32'),
-            ('BI', float),
-            ('BI_uncertainty', float),
-            ('1-rp', float),
-            ('rp_uncertainty', float),
-            ('J', float)
-        ])
-
-        data['channel'] = channel_data_np
-        data['meanpulse_type'] = meanpulse_type_data_np
-        data['BI'] = BIs_np
-        data['BI_uncertainty'] = BI_uncertainties_np
-        data['1-rp'] = 1 - rps_np
-        data['rp_uncertainty'] = rp_uncertainties_np
-        data['J'] = Js_np
-
-        header = "channel,meanpulse_type,BI,BI_uncertainty,1-rp,rp_uncertainty,J"
-
-        np.savetxt(
-            f"{BASE}/outputs/Systematics/BI_meanpulse_test.csv",
-            data,
-            delimiter=",",
-            header=header,
-            comments="",
-            fmt="%s,%s,%.18e,%.18e,%.18e,%.18e,%.18e"
-        )
-
-        print(f"BI saved at {BASE}/outputs/Systematics/BI_meanpulse_test.csv")
+        # print(f"Channel {channel}, window size {window_size}, J: {J:.4e}, 1-rp: {1 - rp:.4f}, BI: {BI:.4e}")
+        # BIs.append(float(BI))
+        # BI_uncertainties.append(float(sigma_BI))
+        # rps.append(float(rp))
+        # rp_uncertainties.append(float(sigma_rp))
+        # Js.append(float(J))
+        # channel_data.append(channel)
+        # meanpulse_type_data.append(meanpulse_type)
+        # BIs_np = np.array(BIs)
+        # BI_uncertainties_np = np.array(BI_uncertainties)
+        # rps_np = np.array(rps)
+        # rp_uncertainties_np = np.array(rp_uncertainties)
+        # Js_np = np.array(Js)
+        # channel_data_np = np.array(channel_data)
+        # meanpulse_type_data_np = np.array(meanpulse_type_data)
+        # # Create a structured array
+        # data = np.zeros(BIs_np.shape[0], dtype=[
+        #     ('channel', 'U32'),
+        #     ('meanpulse_type', 'U32'),
+        #     ('BI', float),
+        #     ('BI_uncertainty', float),
+        #     ('1-rp', float),
+        #     ('rp_uncertainty', float),
+        #     ('J', float)
+        # ])
+        #
+        # data['channel'] = channel_data_np
+        # data['meanpulse_type'] = meanpulse_type_data_np
+        # data['BI'] = BIs_np
+        # data['BI_uncertainty'] = BI_uncertainties_np
+        # data['1-rp'] = 1 - rps_np
+        # data['rp_uncertainty'] = rp_uncertainties_np
+        # data['J'] = Js_np
+        #
+        # header = "channel,meanpulse_type,BI,BI_uncertainty,1-rp,rp_uncertainty,J"
+        #
+        # np.savetxt(
+        #     f"{BASE}/outputs/Systematics/BI_meanpulse_test.csv",
+        #     data,
+        #     delimiter=",",
+        #     header=header,
+        #     comments="",
+        #     fmt="%s,%s,%.18e,%.18e,%.18e,%.18e,%.18e"
+        # )
+        #
+        # print(f"BI saved at {BASE}/outputs/Systematics/BI_meanpulse_test.csv")
