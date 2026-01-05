@@ -116,23 +116,139 @@ def filtered_pulse_model(t, t0, tau_rise, tau_decay1, tau_decay2, p, A, fc, orde
 def pulse_pole_zero(t, amplitude, t0, zero, *poles):
     t = np.asarray(t, dtype=float)
     poles = np.asarray(poles, dtype=float)
+
     tt = t - t0
     f = np.zeros_like(tt)
+
     mask = tt >= 0
-    tt = tt[mask]
+    tt_pos = tt[mask]
+
+    diff = poles[:, None] - poles[None, :]
+    denom = np.prod(
+        np.where(np.eye(len(poles), dtype=bool), 1.0, diff),
+        axis=1
+    )
+
+    k = (poles - zero) / denom
+
+    # normalization so that f(t=0) = 1
+    norm = np.sum(k * np.exp(poles * (-t0)))
+
+    expo = np.exp(poles[:, None] * tt_pos[None, :])
+    f[mask] = np.sum(k[:, None] * expo, axis=0) / norm
+
+    return amplitude * f
+
+import numpy as np
+from scipy.signal import besselap
+
+def make_pulse_pole_zero_bessel_ct(
+    amplitude,
+    bessel_order,
+    fcut,
+    t0,
+    zero,
+    *poles
+    ):
+    """
+    Continuous-time pole-zero pulse convolved with an
+    analog Bessel low-pass filter with cutoff fcut (Hz).
+    Normalized so f(0) = amplitude.
+    """
+
+    poles = np.asarray(poles, dtype=float)
+    wc = 2 * np.pi * fcut   # rad/s
+
+    # -------------------------
+    # Pulse coefficients
+    # -------------------------
     diff = poles[:, None] - poles[None, :]
     denom = np.prod(
         np.where(np.eye(len(poles), dtype=bool), 1.0, diff),
         axis=1
     )
     k = (poles - zero) / denom
-    expo = np.exp(poles[:, None] * tt[None, :])
 
-    f[mask] = np.sum(k[:, None] * expo, axis=0)
-    maxf = np.max(f)
-    if maxf != 0:
-        f = f / maxf
-    return amplitude * f
+    # normalize pulse so f(0)=1
+    k /= np.sum(k * np.exp(-poles * t0))
+    if bessel_order == 0:
+        B = k * amplitude
+        exp_p = poles
+
+        def f(t):
+            t = np.asarray(t, dtype = float)
+            tt = t - t0
+            out = np.zeros_like(tt)
+
+            mask = tt >= 0
+            tt = tt[mask]
+
+            out[mask] = np.sum(
+                B[:, None] * np.exp(exp_p[:, None] * tt),
+                axis = 0
+            )
+            return out
+
+        return f
+    # -------------------------
+    # Analog Bessel filter (scaled)
+    # -------------------------
+    _, p_norm, g_norm = besselap(bessel_order)
+
+    p_filt = wc * p_norm
+    g_filt = g_norm * wc**bessel_order
+
+    diff_f = p_filt[:, None] - p_filt[None, :]
+    denom_f = np.prod(
+        np.where(np.eye(len(p_filt), dtype=bool), 1.0, diff_f),
+        axis=1
+    )
+    A = g_filt / denom_f
+
+    # -------------------------
+    # Combine exponentials
+    # -------------------------
+    pi = poles[:, None]
+    lj = p_filt[None, :]
+    ki = k[:, None]
+    Aj = A[None, :]
+
+    coef = ki * Aj / (pi - lj)
+
+    B = np.sum(coef, axis=1)     # exp(p_i t)
+    C = -np.sum(coef, axis=0)    # exp(lambda_j t)
+
+    # -------------------------
+    # Exact normalization at t=0
+    # -------------------------
+    norm = (
+        np.sum(B * np.exp(-poles * t0))
+        + np.sum(C * np.exp(-p_filt * t0))
+    )
+
+    B *= amplitude / norm
+    C *= amplitude / norm
+
+    # -------------------------
+    # Callable
+    # -------------------------
+    def f(t):
+        t = np.asarray(t, dtype=float)
+        tt = t - t0
+
+        out = np.zeros_like(tt, dtype=np.complex128)
+        mask = tt >= 0
+        tt = tt[mask]
+
+        out[mask] = (
+            np.sum(B[:, None] * np.exp(poles[:, None] * tt), axis=0)
+            + np.sum(C[:, None] * np.exp(p_filt[:, None] * tt), axis=0)
+        )
+
+        return out.real
+
+    return f
+
 
 if __name__ == "__main__":
     from torch.utils.data import TensorDataset
