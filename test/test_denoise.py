@@ -40,8 +40,7 @@ for channel, StdCut in zip(channels, StdCuts):
     interp_nps = np.interp(np.fft.rfftfreq(window_size, 1e-4), np.fft.rfftfreq(len(nps_bis), 1e-4),
                            nps_bis[:len(np.fft.rfftfreq(len(nps_bis)))])
     nps_bis = np.concatenate((interp_nps, interp_nps[-2:0:-1]))
-    nps_bis[:100] = nps[:100]
-    nps_bis = np.concatenate((interp_nps, interp_nps[-2:0:-1]))
+    nps_bis = np.min((nps, nps_bis), axis=0)
     nps_bis *= (8./3.)  # Adjust for Hann window effect
     acceptance = 0.9
     n_deriv = 0
