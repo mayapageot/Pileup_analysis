@@ -142,11 +142,10 @@ def pulse_pole_zero(t, amplitude, t0, zero, *poles):
 import numpy as np
 from scipy.signal import besselap
 
+from scipy.optimize import minimize_scalar
 def make_pulse_pole_zero_bessel_ct(
-    amplitude,
     bessel_order,
     fcut,
-    t0,
     zero,
     *poles
     ):
@@ -168,16 +167,13 @@ def make_pulse_pole_zero_bessel_ct(
         axis=1
     )
     k = (poles - zero) / denom
-
-    # normalize pulse so f(0)=1
-    k /= np.sum(k * np.exp(-poles * t0))
     if bessel_order == 0:
-        B = k * amplitude
+        B = k
         exp_p = poles
 
-        def f(t):
+        def f_raw(t):
             t = np.asarray(t, dtype = float)
-            tt = t - t0
+            tt = t
             out = np.zeros_like(tt)
 
             mask = tt >= 0
@@ -189,6 +185,15 @@ def make_pulse_pole_zero_bessel_ct(
             )
             return out
 
+        res = minimize_scalar(
+            lambda x: -f_raw(x),
+            bounds = (0, 10 / min(-poles)),
+            method = "bounded"
+        )
+        t_peak = res.x
+        peak_value = f_raw(t_peak)
+        def f(t):
+            return f_raw(t+t_peak) / peak_value
         return f
     # -------------------------
     # Analog Bessel filter (scaled)
@@ -219,23 +224,10 @@ def make_pulse_pole_zero_bessel_ct(
     C = -np.sum(coef, axis=0)    # exp(lambda_j t)
 
     # -------------------------
-    # Exact normalization at t=0
-    # -------------------------
-    norm = (
-        np.sum(B * np.exp(-poles * t0))
-        + np.sum(C * np.exp(-p_filt * t0))
-    )
-
-    B *= amplitude / norm
-    C *= amplitude / norm
-
-    # -------------------------
     # Callable
     # -------------------------
-    def f(t):
-        t = np.asarray(t, dtype=float)
-        tt = t - t0
-
+    def f_raw(t):
+        tt = np.asarray(t, dtype=float)
         out = np.zeros_like(tt, dtype=np.complex128)
         mask = tt >= 0
         tt = tt[mask]
@@ -247,6 +239,15 @@ def make_pulse_pole_zero_bessel_ct(
 
         return out.real
 
+    res = minimize_scalar(
+        lambda x: -f_raw(x),
+        bounds = (0,0.1),
+        method = "bounded"
+    )
+    t_peak = res.x
+    peak_value = f_raw(t_peak)
+    def f(t):
+        return f_raw(t + t_peak) / peak_value
     return f
 
 
