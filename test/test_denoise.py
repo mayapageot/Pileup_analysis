@@ -35,9 +35,12 @@ for channel, StdCut in zip(channels, StdCuts):
     data_single = ds.CachedBinaryDataset_withgenerated(file_path_single, path_pos_single, window_size,
                                                        pulse = fitted_pulse_function,
                                                        n_windows = 12288, win_shift = 0)
-    nps = np.fromfile(ds.find_file(f"channel{channel}/dif/denoised_noise_d0.bin_spec.bin"))
-    interp_nps = np.interp(np.fft.rfftfreq(window_size, 1e-4), np.fft.rfftfreq(len(nps), 1e-4),
-                           nps[:len(np.fft.rfftfreq(len(nps)))])
+    nps = np.load(f"{BASE}/outputs/NPS_study/NPS_channel{channel}_win{window_size}_{meas_name}.npy")
+    nps_bis = np.fromfile(ds.find_file(f"channel{channel}/dif/denoised_noise_d0.bin_spec.bin"))
+    interp_nps = np.interp(np.fft.rfftfreq(window_size, 1e-4), np.fft.rfftfreq(len(nps_bis), 1e-4),
+                           nps_bis[:len(np.fft.rfftfreq(len(nps_bis)))])
+    nps_bis = np.concatenate((interp_nps, interp_nps[-2:0:-1]))
+    nps_bis[:100] = nps[:100]
     nps_bis = np.concatenate((interp_nps, interp_nps[-2:0:-1]))
     nps_bis *= (8./3.)  # Adjust for Hann window effect
     acceptance = 0.9
@@ -101,4 +104,4 @@ for channel, StdCut in zip(channels, StdCuts):
     channel_data.append(channel)
     np.savetxt(f"{BASE}/outputs/Systematics/denoise_test.csv",
                np.array([channel_data, Js]).T,
-               delimiter = ',', header = 'channel,J_value', comments = '')
+               delimiter = ',', header = 'channel,J', comments = '')
