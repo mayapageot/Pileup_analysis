@@ -53,9 +53,9 @@ for channel, StdCut in zip(channels, StdCuts):
     for i in range(-5, 10):
         poles_bis[:3] = poles[:3] * (1 + i * 0.05)
 
-        fitted_pulse_function = sim.make_pulse_pole_zero_bessel_ct(bessel_order, 2500, zero, *poles_bis)
-        t10 = root_scalar(lambda x: fitted_pulse_function(x) - 0.1, bracket = [-50e-4, 0]).root
-        t90 = root_scalar(lambda x: fitted_pulse_function(x) - 0.9, bracket = [-50e-4, 0]).root
+        fitted_pulse_function = lambda x: sim.make_pulse_pole_zero_bessel_ct(bessel_order, 2500, zero, *poles_bis)(x*1e-4)
+        t10 = root_scalar(lambda x: fitted_pulse_function(x) - 0.1, bracket = [-50, 0]).root
+        t90 = root_scalar(lambda x: fitted_pulse_function(x) - 0.9, bracket = [-50, 0]).root
         risetime = t90 - t10
         dataset_single_name = "pup_n1-d0_000813_20230628T161508"
         file_path_single, path_pos_single = ds.find_files(meas_name, dataset_single_name, channel,
@@ -180,7 +180,7 @@ for channel, StdCut in zip(channels, StdCuts):
         ])
 
         data['channel'] = channel_data_np
-        data['polemultipliers'] = polemultipliers_np
+        data['polemultiplier'] = polemultipliers_np
         data['risetime'] = risetimes_np
         data['BI'] = BIs_np
         data['BI_uncertainty'] = BI_uncertainties_np
