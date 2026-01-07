@@ -709,5 +709,46 @@ def plot_PSD_distribution(
 
     plt.show()
 
+def injected_pulse_template_test():
+    import pandas as pd
+    df = pd.read_csv("../outputs/Systematics/BI_meanpulse_test.csv")
+    # Unique meanpulse types
+    types = df["meanpulse_type"].unique()
+
+    # Choose colors (3 types → 3 colors)
+    colors = ["red", "blue", "green"]  # You can pick any colors you like
+    markers = ['o', 's', '^']
+    plt.figure(figsize = (8, 5))
+
+    for t, c, m in zip(types, colors, markers):
+        subset = df[df["meanpulse_type"] == t]
+        subset["channel_ID"] = subset["channel"].apply(lambda x: channel_ID[channels.index(x)]).values
+
+        subset.sort_values(by = "channel_ID", inplace = True)
+        print(subset)
+        plt.errorbar(
+            subset["channel_ID"].apply(str),  # x values: channel indices
+            subset["BI"] * 1e5,
+            yerr = subset["BI_uncertainty"] * 1e5,
+            ls = "",  # no line connecting points
+            marker = m,
+            color = c,
+            label = (
+                "single high energy pulse" if t == "raw" else "1 zero 4 poles fit" if t == "fit" else "1 zero 4 poles + bessel filter fit")
+            # label for legend
+        )
+    for channel in df["channel"].unique():
+        data_channel = df[df["channel"] == channel]
+        min_bi = data_channel["BI"].min()
+        max_bi = data_channel["BI"].max()
+        print((max_bi - min_bi) / min_bi)
+    plt.xlabel("Detector ID")
+    plt.ylabel("BI [1e-5 cts/keV/kg/s]")
+    plt.legend(title = "Injected Pulse template")
+    plt.grid()
+    plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/pulse_template.pdf", dpi = 300)
+    plt.show()
+
+
 if __name__ == "__main__":
     plot_m1_2_all_channel()
