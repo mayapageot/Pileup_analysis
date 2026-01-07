@@ -26,6 +26,7 @@ grid_Ns = [i*10 for i in range(1,20)]
 BIs = []
 rps = []
 Js = []
+grid_Ns_all = []
 channel_data = []
 for channel, StdCut in zip(channels, StdCuts):
     window_size = 4096
@@ -77,18 +78,18 @@ for channel, StdCut in zip(channels, StdCuts):
                          N_sigma = N_sigma, full_output = False, use_interp = True)
         Js.append(J.item())
         channel_data.append(channel)
+        grid_Ns_all.append(grid_N)
 
-Js = np.array(Js)
-channel_data = np.array(channel_data)
-data = np.column_stack([channel_data, grid_Ns, Js])
 
-header = "channel,grid_N,J"
+        data = np.column_stack([np.array(channel_data), np.array(grid_Ns_all), np.array(Js)])
 
-np.savetxt(
-    f"{BASE}/outputs/Systematics/BI_varying_grid_size.csv",
-    data,
-    delimiter=",",
-    header=header,
-    comments=""
-)
-print("Results saved to outputs/Systematics/BI_varying_grid_size.csv")
+        header = "channel,grid_N,J"
+
+        np.savetxt(
+            f"{BASE}/outputs/Systematics/BI_varying_grid_size.csv",
+            data,
+            delimiter=",",
+            header=header,
+            comments=""
+        )
+        print("Results saved to outputs/Systematics/BI_varying_grid_size.csv")
