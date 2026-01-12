@@ -35,7 +35,7 @@ def calculate_K_factor(Activity = 2.93E-03,  # Activity in Bq (N/s)
 
 K = calculate_K_factor()
 
-def cubic_interp1d_scipy(y, fine_x):
+def cubic_interp1d_scipy(y, fine_x, x=None):
     """
         Performs cubic interpolation on the input data `y` using the Catmull-Rom spline method.
 
@@ -47,48 +47,59 @@ def cubic_interp1d_scipy(y, fine_x):
             torch.Tensor: Interpolated values at the specified `fine_x` points. The output shape is
                           the same as the input `fine_x` with additional batch dimensions from `y`.
     """
-    # --- ensure fine_x is torch ---
     if not torch.is_tensor(fine_x):
-        fine_x = torch.as_tensor(
-            fine_x, device=y.device, dtype=y.dtype
-        )
+        fine_x = torch.as_tensor(fine_x, device=y.device, dtype=y.dtype)
 
     *batch, S = y.shape
-    N = fine_x.numel()
+    if S < 2:
+        raise ValueError("Need at least 2 samples for interpolation")
 
     y = y.reshape(-1, S)   # (B, S)
     B = y.shape[0]
+    N = fine_x.numel()
 
-    # ----------------------------
+    # ----------------------------------
+    # x grid
+    # ----------------------------------
+    if x is None:
+        x = torch.arange(S, device=y.device, dtype=y.dtype)
+    else:
+        if x.ndim != 1 or x.numel() != S:
+            raise ValueError("x must have shape (S,)")
+        x = x.to(device=y.device, dtype=y.dtype)
+
+    # ----------------------------------
     # Tangents (Catmull–Rom)
-    # ----------------------------
-    ym1 = torch.roll(y,  1, dims=1)
-    yp1 = torch.roll(y, -1, dims=1)
-    m = 0.5 * (yp1 - ym1)
+    # ----------------------------------
+    m = torch.zeros_like(y)
 
-    # One-sided finite differences at boundaries (SciPy behavior)
-    m[:, 0]  = y[:, 1]  - y[:, 0]
-    m[:, -1] = y[:, -1] - y[:, -2]
+    dx = x[2:] - x[:-2]
+    m[:, 1:-1] = (y[:, 2:] - y[:, :-2]) / dx
 
-    # ----------------------------
-    # Interval indices
-    # ----------------------------
-    x = fine_x.clamp(0, S - 1 - 1e-12)
-    i = x.floor().long()
-    t = (x - i.float())[None, :]    # (1, N)
+    m[:, 0]  = (y[:, 1]  - y[:, 0])  / (x[1]  - x[0])
+    m[:, -1] = (y[:, -1] - y[:, -2]) / (x[-1] - x[-2])
 
-    i1 = i.clamp(0, S - 1)
-    i2 = (i + 1).clamp(0, S - 1)
+    # ----------------------------------
+    # Interval search
+    # ----------------------------------
+    fine_x = fine_x.clamp(x[0], x[-1] - 1e-12)
+    i = torch.searchsorted(x, fine_x, right=True) - 1
+    i = i.clamp(0, S - 2)
 
-    y_i  = y.gather(1, i1.expand(B, -1))
-    y_ip = y.gather(1, i2.expand(B, -1))
+    x_i  = x[i]
+    x_ip = x[i + 1]
 
-    m_i  = m.gather(1, i1.expand(B, -1))
-    m_ip = m.gather(1, i2.expand(B, -1))
+    t = ((fine_x - x_i) / (x_ip - x_i))[None, :]  # (1, N)
 
-    # ----------------------------
+    y_i  = y.gather(1, i.expand(B, -1))
+    y_ip = y.gather(1, (i + 1).expand(B, -1))
+
+    m_i  = m.gather(1, i.expand(B, -1))
+    m_ip = m.gather(1, (i + 1).expand(B, -1))
+
+    # ----------------------------------
     # Hermite basis
-    # ----------------------------
+    # ----------------------------------
     t2 = t * t
     t3 = t2 * t
 
@@ -97,14 +108,14 @@ def cubic_interp1d_scipy(y, fine_x):
     h01 = -2*t3 + 3*t2
     h11 =      t3 -    t2
 
-    # ----------------------------
+    # ----------------------------------
     # Cubic spline
-    # ----------------------------
+    # ----------------------------------
     out = (
         h00 * y_i +
-        h10 * m_i +
+        h10 * (x_ip - x_i)[None, :] * m_i +
         h01 * y_ip +
-        h11 * m_ip
+        h11 * (x_ip - x_i)[None, :] * m_ip
     )
 
     return out.view(*batch, N)

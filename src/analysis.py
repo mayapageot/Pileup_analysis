@@ -208,8 +208,8 @@ def compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, pulse
         y1 = s_pileup_1.gather(-1, idx1)
         y2 = s_pileup_2.gather(-1, idx2)
 
-        interp1 = cubic_interp1d_scipy(y1, fine_x)
-        interp2 = cubic_interp1d_scipy(y2, fine_x)
+        interp1 = cubic_interp1d_scipy(y1, fine_x,offs)
+        interp2 = cubic_interp1d_scipy(y2, fine_x,offs)
 
         mu1 = interp1.max(dim = -1).values
         mu2 = interp2.max(dim = -1).values
@@ -559,8 +559,8 @@ def get_PSD_interpole_torch(dataset, H_unit, f1, f2, pulse_center_ratio=0.5, pul
         y2 = filt2.gather(1, idx2)
 
         # cubic interpolation
-        interp1 = cubic_interp1d_scipy(y1, fine_x)
-        interp2 = cubic_interp1d_scipy(y2, fine_x)
+        interp1 = cubic_interp1d_scipy(y1, fine_x,offs)
+        interp2 = cubic_interp1d_scipy(y2, fine_x,offs)
 
         # extract amplitudes
         Amp_1.append(interp1.max(dim=1).values)
@@ -1052,7 +1052,6 @@ def build_mean_pulse_filteralignement(dataset, rms_thr, H, pulse_center_ratio=0.
 
     interpolation_range = 5
     fine_x = torch.arange(-interpolation_range, interpolation_range + 1, 0.05, device=device)
-
     for pulses in loader:
         if isinstance(pulses, (list, tuple)):
             pulses = pulses[0]
@@ -1062,8 +1061,8 @@ def build_mean_pulse_filteralignement(dataset, rms_thr, H, pulse_center_ratio=0.
             pulses[:, :baseline_length],
             pulses[:, target_index + pulse_end_pos:]
         ), dim=1)
-
         sel = torch.std(baseline_raw, dim=-1) < rms_thr
+        print(sel.sum().item()/len(sel), "pulses selected")
         pulses_sel = pulses[sel]
         if pulses_sel.shape[0] == 0:
             continue
@@ -1086,7 +1085,7 @@ def build_mean_pulse_filteralignement(dataset, rms_thr, H, pulse_center_ratio=0.
         idx = max_idx[:, None] + offs[None, :]
         y = filt.gather(1, idx)
 
-        interp2 = cubic_interp1d_scipy(y, fine_x)
+        interp2 = cubic_interp1d_scipy(y, fine_x,offs)
         shift = fine_x[interp2.argmax(dim=1)]
 
         phase = torch.exp(-1j * 2 * np.pi * shift[:, None] / win_length)
