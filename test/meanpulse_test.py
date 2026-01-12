@@ -74,7 +74,7 @@ for channel, StdCut in zip(channels, StdCuts):
     file_name = ds.find_file(f"000813_20230628T161508_{channel:03}_000.bin")
     dataset_pulse = ds.CachedBinaryDataset(file_name, window_size, positions = pos_pulses,
                                            win_shift_start = -window_size // 2)
-    for meanpulse_type in ["mean","single_40Q","single_70Q","single_40Q"]:
+    for meanpulse_type in ["mean","single_40Q","single_70Q","single_100Q"]:
         if meanpulse_type == "mean":
             pulses_min_baseline = (dataset_pulse.data - dataset_pulse.data[:, :window_size // 2 - 48].mean(dim = 1,
                                                                                                            keepdim = True))
@@ -102,6 +102,7 @@ for channel, StdCut in zip(channels, StdCuts):
                 index = single_pulse_indexes[channels.index(channel)][2]
             fitted_pulse_function = dataset_pulse.data[index].cpu().numpy()
             fitted_pulse_function -= np.mean(fitted_pulse_function[:window_size // 2 - 48])
+            fitted_pulse_function /= np.max(fitted_pulse_function)
         dataset_single_name = "pup_n1-d0_000813_20230628T161508"
         file_path_single, path_pos_single = ds.find_files(meas_name, dataset_single_name, channel,
                                                           specific_subdir = "RUN9_pulse_injected_new/")
@@ -161,10 +162,10 @@ for channel, StdCut in zip(channels, StdCuts):
         directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/meanpulse_test/"
         os.makedirs(directory_path, exist_ok = True)
         np.save(directory_path +
-                f"channel{channel}_functions_eff{int(acceptance * 100):d}_meanpulses_test_2",
+                f"channel{channel}_functions_eff{int(acceptance * 100):d}_meanpulses_test_2_{meanpulse_type}",
                 np.array([f1_opt, f2_opt]))
         np.save(directory_path +
-                f"channel{channel}_J_{int(acceptance * 100):d}_meanpulses_test_2",
+                f"channel{channel}_J_{int(acceptance * 100):d}_meanpulses_test_2_{meanpulse_type}",
                 np.array(J_values))
         # f1_opt, f2_opt = np.load(
         #     f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/meanpulse_test/" +
