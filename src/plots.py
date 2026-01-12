@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import binned_statistic
 from matplotlib.ticker import LogLocator
+import pandas as pd
 def plot_psd_vs_dt(PSD_single, PSD_pileup, dt_pileup, cut=0.9, bins=40,PSD_min=-0.01,PSD_max =0.02):
     """
     Plot the Pulse Shape Discriminator (PSD) as a function of time difference (dt).
@@ -710,7 +711,6 @@ def plot_PSD_distribution(
     plt.show()
 
 def injected_pulse_template_test():
-    import pandas as pd
     df = pd.read_csv("../outputs/Systematics/BI_meanpulse_test.csv")
     # Unique meanpulse types
     types = df["meanpulse_type"].unique()
@@ -743,12 +743,128 @@ def injected_pulse_template_test():
         max_bi = data_channel["BI"].max()
         print((max_bi - min_bi) / min_bi)
     plt.xlabel("Detector ID")
-    plt.ylabel("BI [1e-5 cts/keV/kg/s]")
+    plt.ylabel("BI [1e-5 cts/keV/kg/year]")
     plt.legend(title = "Injected Pulse template")
     plt.grid()
     plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/pulse_template.pdf", dpi = 300)
     plt.show()
 
+channel_ID = [5, 9, 11, 10, 4, 2, 12, 3]
+channels = [3, 5, 9, 11, 13, 15, 17, 19]
+def RT_A_fit_plot():
+    import utility.functions as fn
+    df = pd.read_csv("../outputs/Systematics/BI_pulsetimeamp_test.csv")
+    from scipy.optimize import curve_fit
+    fig, (ax, ax_res) = plt.subplots(2, 1, figsize = (12, 8), sharex = True,
+                                     gridspec_kw = {'height_ratios': [3, 1], 'hspace': 0})
+    for index_channel in np.argsort(channel_ID):
+        channel = channels[index_channel]
+        data_channel = df[df["channel"] == channel]
+        l, = ax.plot(data_channel["risetime"] ** 0.7514 / data_channel["amp_gain"] ** 0.5773,
+                     data_channel["J"] * fn.K * 1e5, marker = 'o', ls = "", ms = 1)
+        linear_f = lambda x, a, b: a * x + b
+        popt, pcov = curve_fit(linear_f, data_channel["risetime"] ** 0.7514 / data_channel["amp_gain"] ** 0.5773,
+                               data_channel["J"] * fn.K * 1e5)
+        x_fit = np.linspace(1.5, 8, 100)
+        ax.plot(x_fit, popt[0] * x_fit + popt[1], ls = "--", lw=0.7,
+                c = l.get_color())
+        residuals = data_channel["J"] * fn.K * 1e5 - linear_f(
+            data_channel["risetime"] ** 0.7514 / data_channel["amp_gain"] ** 0.5773, *popt)
+        ax_res.plot(data_channel["risetime"] ** 0.7514 / data_channel["amp_gain"] ** 0.5773, residuals, marker = 'o',
+                    ls = "", c = l.get_color(), ms = 1)
+        ax.plot([], [], c = l.get_color(), label = f"detector ID {channel_ID[index_channel]}",marker='s',ls="")
 
+    ax.legend(fontsize = 12)
+    ax.set_ylabel("Estimated BI (cts/keV/kg/year)",fontdict = {'size': 14})
+    ax_res.axhline(0, color = 'black', ls = '--')
+    ax_res.set_xlabel("$RT^{n}/A^{m}$ with n=0.751 and m=0.577",fontdict = {'size': 14})
+    ax_res.set_ylabel("Residuals (cts/keV/kg/year)",fontdict = {'size': 14})
+    ax.tick_params(axis = 'both', which = 'major', labelsize = 14)
+    ax_res.tick_params(axis = 'both', which = 'major', labelsize = 14)
+    fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/RT_A_fit.pdf", dpi = 300)
+
+    plt.show()
+
+def grid_size_systematics_plot():
+    import utility.functions as fn
+
+    df = pd.read_csv("../outputs/Systematics/BI_varying_grid_size.csv")
+    for index_channel in np.argsort(channel_ID):
+        channel = channels[index_channel]
+        data_channel = df[df["channel"] == channel]
+        # plt.errorbar(data_channel["grid_N"],data_channel["J"]*fn.K,marker='o',ls="")
+        grid_N = data_channel["grid_N"].array
+        BI = data_channel["J"].array * fn.K
+        plt.plot(grid_N, (BI - np.min(BI)) / np.min(BI) * 100, marker = 'o', ls = "",
+                 label = f"Detector ID {channel_ID[index_channel]}")
+
+        print(grid_N[np.argwhere((BI - np.min(BI)) / np.min(BI) < 0.01)[0][0]])
+    plt.axvline(90, color = 'black', ls = '--', label = 'threshold grid size \nto reach <1% variation')
+    plt.xlabel("Grid size N")
+    plt.ylabel("Relative difference to minimum BI (%)")
+    plt.xticks(grid_N[::2])
+    plt.xticks(grid_N[1::2], minor = True)
+    plt.yticks(np.arange(0, 14, 2))
+    plt.yticks(np.arange(1, 14, 2), minor = True)
+    plt.grid()
+    plt.grid(which = 'minor', ls = '--', alpha = 0.5)
+    plt.legend()
+    plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/grid_size_systematics.pdf", dpi = 300)
+    plt.show()
+
+def pulse_pos_systematic():
+    df = pd.read_csv("../outputs/Systematics/BI_frac_4Pole_Bessel.csv")
+    for index_channel in np.argsort(channel_ID):
+        channel = channels[index_channel]
+        data_channel = df[df["channel"] == channel]
+        data_channel.loc[data_channel["BI_uncertainty"] > 3e-6, "BI_uncertainty"] = 0
+        plt.errorbar(data_channel["pulse_center_ratio"], data_channel["BI"] * 1e5,
+                     yerr = data_channel["BI_uncertainty"] * 1e5, label = f"detector ID {channel_ID[index_channel]}",
+                     marker = 'o', ls = "")
+        # print((np.max(data_channel["J"]) - np.min(data_channel["J"]))/np.mean(data_channel["J"]))
+    plt.xlabel("Pulse center position within window")
+    plt.ylabel("BI (cts/keV/kg/year)")
+    plt.legend(ncols = 3, bbox_to_anchor = (0.49, 0.19, 0.5, 0.5), shadow = True)
+    plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/pulse_position_systematics.pdf", dpi = 300)
+    plt.grid()
+    plt.show()
+def window_size_systematic():
+    df = pd.read_csv("../outputs/Systematics/BI_window_size_4Pole_Bessel.csv")
+    for index_channel in np.argsort(channel_ID):
+        channel = channels[index_channel]
+        data_channel = df[df["channel"] == channel]
+        data_channel.loc[data_channel["BI_uncertainty"] > 2e-6, "BI_uncertainty"] = 0
+        plt.errorbar(data_channel["window_size"]*1e-4, data_channel["BI"] * 1e5,
+                     yerr = data_channel["BI_uncertainty"] * 1e5, label = f"detector ID {channel_ID[index_channel]}",
+                     marker = 'o', ls = "")
+        # print((np.max(data_channel["J"]) - np.min(data_channel["J"]))/np.mean(data_channel["J"]))
+    plt.xlabel("Window size (s)")
+    plt.ylabel("BI (cts/keV/kg/year)")
+    plt.legend(ncols = 3, shadow = True)
+    plt.grid()
+    plt.ylim(4.5, 9)
+    plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/window_size_systematics.pdf", dpi = 300)
+    plt.show()
+def simulated_analytical_BI():
+    import utility.functions as fn
+    df = pd.read_csv("../outputs/Systematics/BI_pulsetime_test.csv")
+    for index_channel in np.argsort(channel_ID):
+        channel = channels[index_channel]
+        data_channel = df[df["channel"] == channel]
+        l = plt.errorbar(data_channel["BI"] * 1e5,
+                         (data_channel["J"] * fn.K - data_channel["BI"]) / (data_channel["J"] * fn.K) * 100,
+                         yerr = data_channel["BI_uncertainty"] / (data_channel["J"] * fn.K) * 100, marker = 'o',
+                         ls = "", markersize = 3,
+                         elinewidth = .8).lines[0]
+        plt.plot([], [], label = f"detector ID {channel_ID[index_channel]}", marker = 's', ls = "", c = l.get_color())
+    plt.axhline(0, color = 'black', ls = '--')
+    plt.xlabel("BI (1e-5 cts/keV/kg/year)")
+    plt.ylabel("Relative difference simulated - analytical BI (%)")
+    plt.title("Oberved bias in BI estimation from pulse risetime variation test")
+    plt.grid()
+    plt.ylim(-5, 10.1)
+    plt.legend()
+    plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/simulated_analytical_BI.pdf", dpi = 300)
+    plt.show()
 if __name__ == "__main__":
-    plot_m1_2_all_channel()
+    simulated_analytical_BI()
