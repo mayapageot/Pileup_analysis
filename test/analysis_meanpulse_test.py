@@ -47,11 +47,11 @@ for channel, StdCut in zip(channels, StdCuts):
     window_size = 4096
     meas_name = "000813_20230628T161508"
 
-    bessel_order = 6
-    zero, *poles = fit_parameters[(fit_parameters[:, 0] == channel) & (fit_parameters[:, 1] == bessel_order), 3:][0]
-    poles = np.sort(poles)
-    fitted_pulse_function = lambda x: sim.make_pulse_pole_zero_bessel_ct(bessel_order, 2500, zero, *poles)(x * 1e-4)
-
+    # bessel_order = 6
+    # zero, *poles = fit_parameters[(fit_parameters[:, 0] == channel) & (fit_parameters[:, 1] == bessel_order), 3:][0]
+    # poles = np.sort(poles)
+    # fitted_pulse_function = lambda x: sim.make_pulse_pole_zero_bessel_ct(bessel_order, 2500, zero, *poles)(x * 1e-4)
+    fitted_pulse_function = np.fromfile(f"{BASE}/outputs/meanpulses_build/pos_pulses_rawdata/average_pulse_channel_{channel}.bin")
     pos_pulses = np.load(f"{BASE}/outputs/meanpulses_build/pos_pulses_rawdata/pos_pulses_channel_{channel}.npy")
     file_name = ds.find_file(f"000813_20230628T161508_{channel:03}_000.bin")
     dataset_pulse = ds.CachedBinaryDataset(file_name, window_size, positions = pos_pulses,
