@@ -44,7 +44,7 @@ def plot_psd_vs_dt(PSD_single, PSD_pileup, dt_pileup, cut=0.9, bins=40,PSD_min=-
         color = "#2d508c",
     )
     ax.set_xlim(-0.01, 0.8)
-    ax.set_xlabel("dt (ms)")
+    ax.set_xlabel("dt [ms]")
     ax.set_ylabel("1-PSD")
     ax2 = ax.inset_axes([1.0, 0, 1, 1], sharey=ax)
     hist,_,_ = ax2.hist(
@@ -119,7 +119,7 @@ def plot_biais_vs_dt(PSD_single, PSD_pileup, dt_pileup, cut=0.9, bins=40):
         color="#2d508c",
     )
     ax.set_xlim(0, 0.8)
-    ax.set_xlabel("dt (ms)")
+    ax.set_xlabel("dt [ms]")
     ax.set_ylabel("Pileup Bias (1 - PSD)")
 
     ax2 = ax.inset_axes([1.0, 0, 1, 1], sharey=ax)
@@ -529,8 +529,8 @@ def plot_bessel_filters(channel,fcs):
     cbar = fig.colorbar(sm, ax=ax, pad=0.01)
     ax.set_xscale('log')
     ax.set_yscale('log')
-    ax.set_xlabel('Frequency (Hz)')
-    cbar.set_label('Bessel Filter Cutoff Frequency (Hz)')
+    ax.set_xlabel('Frequency [Hz]')
+    cbar.set_label('Bessel Filter Cutoff Frequency [Hz]')
     ax.set_ylabel('Filter Amplitude')
     plt.show()
 
@@ -542,7 +542,7 @@ def plot_J_vs_bessel_fc():
         Js = np.loadtxt(f"../outputs/Pileup_filter_functions/channel_{channel}/bessel_study/Js_vs_fc")
         fcs = [500, 750, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500]
         plt.plot(fcs, 1 - np.array(Js), marker = 'o', label = f'detector ID {channel_ID[index_channel]}')
-    plt.xlabel('Bessel Filter Cutoff Frequency (Hz)',fontdict = {'size':14})
+    plt.xlabel('Bessel Filter Cutoff Frequency [Hz]',fontdict = {'size':14})
     plt.ylabel('1-J aka "rejection power"',fontdict = {'size':14})
     plt.legend(fontsize = 12)
     plt.tick_params(axis = 'both', which = 'major', labelsize = 14)
@@ -561,7 +561,7 @@ def plot_mp_freq_all_channel():
     plt.tick_params(axis = 'both', which = 'major', labelsize = 14)
     plt.xscale('log')
     plt.yscale('log')
-    plt.xlabel('Frequency (Hz)', fontdict = {'size': 14})
+    plt.xlabel('Frequency [Hz]', fontdict = {'size': 14})
     plt.ylabel('Pulse Amplitude Spectrum |S(w)|', fontdict = {'size': 14})
     plt.show()
 def plot_meanpulse_fit(meanpulse, y, t):
@@ -583,7 +583,7 @@ def plot_meanpulse_fit_freq(meanpulse, y,axs=None, labels=None):
     ax2.set_ylim(-0.1*np.max(fmp),0.1*np.max(fmp))
     ax1.legend()
     ax1.set_ylim(1e-4,1e2)
-    ax1.set_xlabel("Frequency (Hz)")
+    ax1.set_xlabel("Frequency [Hz]")
     ax1.set_ylabel("Amplitude")
 def plot_PSD_distribution(
     PSD_single, PSD_pileup,
@@ -749,6 +749,47 @@ def injected_pulse_template_test():
     plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/pulse_template.pdf", dpi = 300)
     plt.show()
 
+def injected_pulse_template_test_updated():
+    df_1 = pd.read_csv("../outputs/Systematics/BI_meanpulse_test.csv")
+    df_2 = pd.read_csv("../outputs/Systematics/BI_meanpulses_test_2.csv")
+    df = pd.concat((df_1, df_2))
+    # Unique meanpulse types
+    types = df["meanpulse_type"].unique()
+    types = ['raw', 'single_40Q', 'single_70Q', 'single_100Q', 'fit_bessel', 'mean']
+    print(types)
+    # Choose colors (3 types → 3 colors)
+    colors = ["red", "red", "red", "red", "blue", "green", "purple"]  # You can pick any colors you like
+    markers = ['o', "p", 9, "s", '^', "x"]
+    plt.figure(figsize = (8, 5))
+
+    for t, c, m in zip(types, colors, markers):
+        subset = df[df["meanpulse_type"] == t]
+        subset["channel_ID"] = subset["channel"].apply(lambda x: channel_ID[channels.index(x)]).values
+
+        subset.sort_values(by = "channel_ID", inplace = True)
+        plt.errorbar(
+            subset["channel_ID"].apply(str),  # x values: channel indices
+            subset["BI"] * 1e5,
+            yerr = subset["BI_uncertainty"] * 1e5,
+            ls = "",  # no line connecting points
+            marker = m,
+            color = c,
+        )
+    for label, color in zip(["single high energy pulses\npicked @ different energies", "1 zero 4 poles + bessel fit", "average pulse"],
+                            ["r", "b", "g"]):
+        plt.plot([], [], marker = "s", ls = "", ms = 5, label = label, color = color)
+
+    # for channel in df["channel"].unique():
+    #     data_channel = df[df["channel"] == channel]
+    #     min_bi = data_channel["BI"].min()
+    #     max_bi = data_channel["BI"].max()
+    plt.xlabel("Detector ID",fontdict = {'size': 14})
+    plt.ylabel("BI [1e-5 cts/keV/kg/year]",fontdict = {'size': 14})
+    plt.legend(title = "Injected Pulse template",fontsize=12, title_fontsize=14)
+    plt.tick_params(axis = 'both', which = 'major', labelsize = 14)
+    plt.grid()
+    plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/pulse_template.pdf", dpi = 300)
+    plt.show()
 channel_ID = [5, 9, 11, 10, 4, 2, 12, 3]
 channels = [3, 5, 9, 11, 13, 15, 17, 19]
 def RT_A_fit_plot():
@@ -775,10 +816,10 @@ def RT_A_fit_plot():
         ax.plot([], [], c = l.get_color(), label = f"detector ID {channel_ID[index_channel]}",marker='s',ls="")
 
     ax.legend(fontsize = 12)
-    ax.set_ylabel("Estimated BI (cts/keV/kg/year)",fontdict = {'size': 14})
+    ax.set_ylabel("Estimated BI [1e-5 cts/keV/kg/year]",fontdict = {'size': 14})
     ax_res.axhline(0, color = 'black', ls = '--')
     ax_res.set_xlabel("$RT^{n}/A^{m}$ with n=0.751 and m=0.577",fontdict = {'size': 14})
-    ax_res.set_ylabel("Residuals (cts/keV/kg/year)",fontdict = {'size': 14})
+    ax_res.set_ylabel("Residuals [1e-5 cts/keV/kg/year]",fontdict = {'size': 14})
     ax.tick_params(axis = 'both', which = 'major', labelsize = 14)
     ax_res.tick_params(axis = 'both', which = 'major', labelsize = 14)
     fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/RT_A_fit.pdf", dpi = 300)
@@ -801,7 +842,7 @@ def grid_size_systematics_plot():
         print(grid_N[np.argwhere((BI - np.min(BI)) / np.min(BI) < 0.01)[0][0]])
     plt.axvline(90, color = 'black', ls = '--', label = 'threshold grid size \nto reach <1% variation')
     plt.xlabel("Grid size N")
-    plt.ylabel("Relative difference to minimum BI (%)")
+    plt.ylabel("Relative difference to minimum BI [%]")
     plt.xticks(grid_N[::2])
     plt.xticks(grid_N[1::2], minor = True)
     plt.yticks(np.arange(0, 14, 2))
@@ -823,7 +864,7 @@ def pulse_pos_systematic():
                      marker = 'o', ls = "")
         # print((np.max(data_channel["J"]) - np.min(data_channel["J"]))/np.mean(data_channel["J"]))
     plt.xlabel("Pulse center position within window")
-    plt.ylabel("BI (cts/keV/kg/year)")
+    plt.ylabel("BI [1e-5 cts/keV/kg/year]")
     plt.legend(ncols = 3, bbox_to_anchor = (0.49, 0.19, 0.5, 0.5), shadow = True)
     plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/pulse_position_systematics.pdf", dpi = 300)
     plt.grid()
@@ -838,8 +879,8 @@ def window_size_systematic():
                      yerr = data_channel["BI_uncertainty"] * 1e5, label = f"detector ID {channel_ID[index_channel]}",
                      marker = 'o', ls = "")
         # print((np.max(data_channel["J"]) - np.min(data_channel["J"]))/np.mean(data_channel["J"]))
-    plt.xlabel("Window size (s)")
-    plt.ylabel("BI (cts/keV/kg/year)")
+    plt.xlabel("Window size [s]")
+    plt.ylabel("BI [1e-5 cts/keV/kg/year]")
     plt.legend(ncols = 3, shadow = True)
     plt.grid()
     plt.ylim(4.5, 9)
@@ -858,8 +899,8 @@ def simulated_analytical_BI():
                          elinewidth = .8).lines[0]
         plt.plot([], [], label = f"detector ID {channel_ID[index_channel]}", marker = 's', ls = "", c = l.get_color())
     plt.axhline(0, color = 'black', ls = '--')
-    plt.xlabel("BI (1e-5 cts/keV/kg/year)")
-    plt.ylabel("Relative difference simulated - analytical BI (%)")
+    plt.xlabel("BI [1e-5 cts/keV/kg/year]")
+    plt.ylabel("Relative difference simulated - analytical BI [%]")
     plt.title("Oberved bias in BI estimation from pulse risetime variation test")
     plt.grid()
     plt.ylim(-5, 10.1)
@@ -867,4 +908,4 @@ def simulated_analytical_BI():
     plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/simulated_analytical_BI.pdf", dpi = 300)
     plt.show()
 if __name__ == "__main__":
-    simulated_analytical_BI()
+    injected_pulse_template_test_updated()
