@@ -31,7 +31,7 @@ amp_gains = []
 meanpulse_type_list = []
 single_pulse_indexes =  [[126, 47, 77],
                          [394, 390, 240],
-                         [33, 64, 322],
+                         [33, 334, 322],
                          [71, 312, 199],
                          [101, 233, 71],
                          [253, 52, 147],
@@ -43,6 +43,8 @@ fit_parameters = np.loadtxt(f"{BASE}/outputs/fits/pulse_fit_params.csv", delimit
 for channel, StdCut in zip(channels, StdCuts):
     window_size = 4096
     meas_name = "000813_20230628T161508"
+    if channel != 9:
+        continue
     # for meanpulse_type in ["raw","fit","fit_bessel"]:
     #     if meanpulse_type == "raw":
     #         meanpulse = np.fromfile(ds.find_file(f"{meas_name}_{channel:03}_???.bin_edmean.bin",
@@ -75,6 +77,8 @@ for channel, StdCut in zip(channels, StdCuts):
     dataset_pulse = ds.CachedBinaryDataset(file_name, window_size, positions = pos_pulses,
                                            win_shift_start = -window_size // 2)
     for meanpulse_type in ["mean","single_40Q","single_70Q","single_100Q"]:
+        if meanpulse_type != "single_70Q":
+            continue
         if meanpulse_type == "mean":
             pulses_min_baseline = (dataset_pulse.data - dataset_pulse.data[:, :window_size // 2 - 48].mean(dim = 1,
                                                                                                            keepdim = True))
@@ -239,7 +243,7 @@ for channel, StdCut in zip(channels, StdCuts):
         header = "channel,meanpulse_type,BI,BI_uncertainty,1-rp,rp_uncertainty,J"
 
         np.savetxt(
-            f"{BASE}/outputs/Systematics/BI_meanpulses_test_2.csv",
+            f"{BASE}/outputs/Systematics/BI_meanpulses_test_3.csv",
             data,
             delimiter=",",
             header=header,
@@ -247,4 +251,4 @@ for channel, StdCut in zip(channels, StdCuts):
             fmt="%s,%s,%.18e,%.18e,%.18e,%.18e,%.18e"
         )
 
-        print(f"BI saved at {BASE}/outputs/Systematics/BI_meanpulses_test_2.csv")
+        print(f"BI saved at {BASE}/outputs/Systematics/BI_meanpulses_test_3.csv")
