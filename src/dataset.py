@@ -326,7 +326,7 @@ def load_binary_file(file_path, dtype = np.uint32):
     """
     data = np.fromfile(file_path, dtype = dtype, offset = 12)
     adc_range = read_bin_header(file_path)["adcRange"]
-    ((np.right_shift(data, 8).astype(np.float64) / (2 ** 23)) * adc_range - adc_range)
+    data = ((np.right_shift(data, 8).astype(np.float64) / (2 ** 23)) * adc_range - adc_range)
     return data
 
 

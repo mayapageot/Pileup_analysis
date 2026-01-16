@@ -251,6 +251,11 @@ def make_pulse_pole_zero_bessel_ct(
     return f
 
 
+def ROI_amp_from_sensitivity(sensitivity, area_factor=1.3, LY=0.36, gain=1104, Q_value=3.034):
+    calib = 1e6 / (sensitivity * gain)  # KeV / V
+    return LY * Q_value / calib * area_factor
+
+
 if __name__ == "__main__":
     from torch.utils.data import TensorDataset
     import src.dataset as ds

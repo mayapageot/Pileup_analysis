@@ -962,6 +962,7 @@ def compute_BI_uncertainty_torch(PSD_single: torch.Tensor,
 
 
 def build_mean_pulse(dataset, rms_thr, pulse_center_ratio=0.5, pulse_start_pos = -100, pulse_end_pos = 400,
+                     amplitude_bounds=None,
                      batch_size=2048, device="cpu", use_loader=False):
     """
         Builds the mean pulse from a dataset by aligning and normalizing waveforms.
@@ -1006,6 +1007,13 @@ def build_mean_pulse(dataset, rms_thr, pulse_center_ratio=0.5, pulse_start_pos =
         pulses_clean = pulses_sel - baseline[:, None]
 
         max_pos = torch.argmax(pulses_clean, dim=1)
+        if amplitude_bounds is not None:
+            max_val = pulses_clean[torch.arange(pulses_clean.shape[0]), max_pos]
+            amp_sel = (max_val >= amplitude_bounds[0]) & (max_val <= amplitude_bounds[1])
+            pulses_clean = pulses_clean[amp_sel]
+            max_pos = max_pos[amp_sel]
+            if pulses_clean.shape[0] == 0:
+                continue
         shifts = target_index - max_pos
 
         pulses_aligned = align_waveforms(pulses_clean, shifts)
@@ -1022,6 +1030,7 @@ def build_mean_pulse(dataset, rms_thr, pulse_center_ratio=0.5, pulse_start_pos =
 
 def build_mean_pulse_filteralignement(dataset, rms_thr, H, pulse_center_ratio=0.5,
                                       pulse_start_pos=-100, pulse_end_pos=400,
+                                      amplitude_bounds=None, return_amp=False,
                                       batch_size=2048, device="cpu", use_loader=False):
     """
         Builds the mean pulse from a dataset by aligning and normalizing waveforms using
@@ -1052,6 +1061,9 @@ def build_mean_pulse_filteralignement(dataset, rms_thr, H, pulse_center_ratio=0.
 
     interpolation_range = 5
     fine_x = torch.arange(-interpolation_range, interpolation_range + 1, 0.05, device=device)
+
+    if return_amp:
+        amplitudes = []
     for pulses in loader:
         if isinstance(pulses, (list, tuple)):
             pulses = pulses[0]
@@ -1062,14 +1074,18 @@ def build_mean_pulse_filteralignement(dataset, rms_thr, H, pulse_center_ratio=0.
             pulses[:, target_index + pulse_end_pos:]
         ), dim=1)
         sel = torch.std(baseline_raw, dim=-1) < rms_thr
-        print(sel.sum().item()/len(sel), "pulses selected")
         pulses_sel = pulses[sel]
         if pulses_sel.shape[0] == 0:
             continue
 
         baseline = pulses_sel[:, :baseline_length].mean(dim=1)
         pulses_clean = pulses_sel - baseline[:, None]
-
+        if amplitude_bounds is not None:
+            max_val = pulses_clean.max(dim=1).values
+            amp_sel = (max_val >= amplitude_bounds[0]) & (max_val <= amplitude_bounds[1])
+            pulses_clean = pulses_clean[amp_sel]
+            if pulses_clean.shape[0] == 0:
+                continue
         fpulse = torch.fft.fft(pulses_clean, dim=-1)
 
         lo = target_index - jitter_max
@@ -1092,10 +1108,33 @@ def build_mean_pulse_filteralignement(dataset, rms_thr, H, pulse_center_ratio=0.
         pulses_aligned = torch.fft.ifft(fpulse * phase, dim=-1).real
 
         max_val = pulses_aligned.max(dim=1).values
+        if return_amp:
+            amplitudes.append(max_val)
         pulses_norm = pulses_aligned / max_val[:, None]
 
         mean_pulse += pulses_norm.sum(dim=0)
         total_count += pulses_norm.shape[0]
 
     mean_pulse /= total_count
+    if return_amp:
+        amplitudes = torch.cat(amplitudes)
+        return mean_pulse, amplitudes
     return mean_pulse
+
+
+def build_mean_pulse_filteralignement_from_raw(dataset, rms_thr, nps, pulse_center_ratio=0.5,
+                                      pulse_start_pos=-100, pulse_end_pos=400,
+                                      amplitude_bounds=None, return_amp=False,
+                                      batch_size=2048, device="cpu", use_loader=False):
+
+    mean_pulse = build_mean_pulse(dataset, rms_thr = rms_thr,
+                                     amplitude_bounds = amplitude_bounds,
+                                     batch_size = batch_size, device = device,
+                                     use_loader = use_loader)
+    S, w, H_unit = compute_H(mean_pulse, nps, np.hanning)
+    H_unit_torch = torch.tensor(H_unit, dtype = torch.cfloat, device = device)
+    return build_mean_pulse_filteralignement(dataset, rms_thr, H_unit_torch,
+                                                            pulse_center_ratio=pulse_center_ratio,
+                                      pulse_start_pos=pulse_start_pos, pulse_end_pos=pulse_end_pos,
+                                      amplitude_bounds=amplitude_bounds,return_amp=return_amp,
+                                      batch_size=batch_size, device=device, use_loader=use_loader)
