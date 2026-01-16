@@ -22,11 +22,13 @@ ref_sensitivity = 1.4
 ref_amplitude = sim.ROI_amp_from_sensitivity(ref_sensitivity)
 WP_gain = np.array(LED_amp)/LED_amp[measurements.index(ref_meas)]
 Gains_80V = 13.6
-J_values = []
+J_values_all = []
 meas_values = []
+NTL_noise_factor = 1e-7
 for meas in measurements:
-    mean_pulse_filtered = np.fromfile(f"../outputs/meanpulses_build/meanpulse_measurement_{meas}_channel{channel}.bin")
-    nps = np.load(f"../outputs/NPS_study/NPS_measurement_{meas}_channel{channel}.bin")
+    mean_pulse_filtered = np.fromfile(f"{BASE}/outputs/meanpulses_build/meanpulse_measurement_{meas}_channel{channel}.bin")
+    nps = (np.fromfile(f"{BASE}/outputs/NPS_study/NPS_measurement_{meas}_channel{channel}.bin") +
+           NTL_noise_factor*np.abs(np.fft.fft(mean_pulse_filtered))**2)
     S, w, H_unit = an.compute_H(mean_pulse_filtered, nps, np.hanning)
     signal_amp = ref_amplitude * WP_gain[measurements.index(meas)] * Gains_80V
     acceptance = 0.9
@@ -70,9 +72,9 @@ for meas in measurements:
     S_H_delayed, S_H, S2_over_nps = an.precompute_constants(S_torch, H_unit_torch, w_torch, t_torch, nps_torch)
     J = an.compute_J(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
                      N_sigma = N_sigma, full_output = False, use_interp = True)
-    J_values.append(J.cpu().numpy())
+    J_values_all.append(J.cpu().numpy())
     meas_values.append(meas)
-    data = np.array([meas_values, J_values]).T
+    data =np.column_stack([np.array(meas_values), np.array(J_values_all)])
     print(f"Measurement {meas}: J = {J:.6e}")
     header = "measurement,J_value"
     np.savetxt(
@@ -81,3 +83,4 @@ for meas in measurements:
         delimiter = ",",
         header = header
     )
+print("Done.")
