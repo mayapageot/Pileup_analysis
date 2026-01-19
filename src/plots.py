@@ -888,24 +888,59 @@ def window_size_systematic():
     plt.show()
 def simulated_analytical_BI():
     import utility.functions as fn
-    df = pd.read_csv("../outputs/Systematics/BI_pulsetime_test.csv")
-    for index_channel in np.argsort(channel_ID):
-        channel = channels[index_channel]
-        data_channel = df[df["channel"] == channel]
-        l = plt.errorbar(data_channel["BI"] * 1e5,
-                         (data_channel["J"] * fn.K - data_channel["BI"]) / (data_channel["J"] * fn.K) * 100,
-                         yerr = data_channel["BI_uncertainty"] / (data_channel["J"] * fn.K) * 100, marker = 'o',
-                         ls = "", markersize = 3,
-                         elinewidth = .8).lines[0]
-        plt.plot([], [], label = f"detector ID {channel_ID[index_channel]}", marker = 's', ls = "", c = l.get_color())
+    df1 = pd.read_csv("../outputs/Systematics/BI_meanpulse_test.csv",engine="python")
+    df2 = pd.read_csv("../outputs/Systematics/BI_meanpulses_test_2.csv",engine="python")
+    df = pd.concat((df1,df2))
+    df["detector_id"] = df["channel"].apply(lambda x: channel_ID[channels.index(x)])
+    df.sort_values("detector_id",inplace = True)
+    print(df)
+    for mp_type in ["mean"]:#df["meanpulse_type"].unique():
+        print(mp_type)
+        df_sub = df[df["meanpulse_type"]==mp_type]
+        plt.errorbar(df_sub["detector_id"].apply(str),(df_sub["J"] * fn.K - df_sub["BI"]) / (df_sub["J"] * fn.K) * 100,
+                              yerr = df_sub["BI_uncertainty"] / (df_sub["J"] * fn.K) * 100, marker = 'o',
+                             ls = "").lines[0]
     plt.axhline(0, color = 'black', ls = '--')
-    plt.xlabel("BI [1e-5 cts/keV/kg/year]")
-    plt.ylabel("Relative difference simulated - analytical BI [%]")
-    plt.title("Oberved bias in BI estimation from pulse risetime variation test")
+    plt.xlabel("BI [1e-5 cts/keV/kg/year]",fontdict = {'size': 14})
+    plt.ylabel("Relative difference\nsimulated - analytical BI [%]",fontdict = {'size': 14})
+    # plt.title("Oberved bias in BI estimation from pulse risetime variation test",fontdict = {'size': 14})
+
+    plt.tick_params(axis = 'both', which = 'major', labelsize = 14)
+    plt.tight_layout()
     plt.grid()
-    plt.ylim(-5, 10.1)
-    plt.legend()
+    # plt.ylim(-5, 10.1)
+    # plt.legend()
     plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/simulated_analytical_BI.pdf", dpi = 300)
     plt.show()
+
+def WP_test():
+    df = pd.read_csv(f"../outputs/Systematics/BI_WP.csv")
+    fig, ax1 = plt.subplots(1, figsize = (8.4, 7))
+    channel = 3
+    data_channel = df[df["channel"] == channel]
+    p1, = ax1.plot(data_channel.loc[:, "biais_current"], data_channel.loc[:, "J_value"] * 100, marker = 'o', ls = '', )
+    channel = 5
+    ax2 = ax1.twinx()
+    data_channel = df[df["channel"] == channel]
+    p2, = ax2.plot(data_channel.loc[:, "biais_current"], data_channel.loc[:, "J_value"] * 100, marker = 'o', ls = '',
+                   c = 'orange')
+    ax1.set_xlabel("Bias current (nA)", fontdict = {'size': 14})
+    ax1.set_ylabel("Global pile-up misidentification rate channel 5 [%]", color = p1.get_color(),
+                   fontdict = {'size': 14})
+    ax2.set_ylabel("Global pile-up misidentification rate channel 9 [%]", color = p2.get_color(),
+                   fontdict = {'size': 14})
+    ax1.tick_params(axis = 'y', colors = p1.get_color())
+    ax2.tick_params(axis = 'y', colors = p2.get_color())
+    ax1.grid(axis = 'x')
+    ax1.yaxis.get_offset_text().set_fontsize(14)
+    ax2.yaxis.get_offset_text().set_fontsize(14)
+    ax1.tick_params(axis = 'both', which = 'major', labelsize = 14)
+    ax2.tick_params(axis = 'both', which = 'major', labelsize = 14)
+    fig.tight_layout()
+    plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/WP_test.pdf", dpi = 300)
+
+    plt.show()
+
+
 if __name__ == "__main__":
-    injected_pulse_template_test_updated()
+    WP_test()
