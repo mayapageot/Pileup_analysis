@@ -21,7 +21,7 @@ measurements = [779,    780,    781,    782,    783,    784,    785,    786,    
 ref_meas_list = [780]*9 + [770]*9
 ref_sensitivity_list = [1.4]*9 + [2.0]*9
 Gains_80V_list = [13.6]*9 + [10.6]*9
-NTL_noise_factor_list = [0] *9 + [0]*9
+NTL_noise_factor_list = [1e-7] *9 + [0.3e-7]*9
 J_values_all = []
 meas_values = []
 channel_list = []
@@ -85,7 +85,7 @@ for idx, meas in enumerate(measurements):
     print(f"Measurement {meas}: J = {J:.6e}")
     header = "channel,measurement,J_value"
     np.savetxt(
-        f"{BASE}/outputs/Systematics/BI_WP_channel_5.csv",
+        f"{BASE}/outputs/Systematics/BI_WP.csv",
         data,
         delimiter = ",",
         header = header
