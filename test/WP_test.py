@@ -87,6 +87,7 @@ for idx, meas in enumerate(measurements):
     np.savetxt(
         f"{BASE}/outputs/Systematics/BI_WP.csv",
         data,
+        comments="",
         delimiter = ",",
         header = header
     )

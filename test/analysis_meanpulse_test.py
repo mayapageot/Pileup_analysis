@@ -203,14 +203,15 @@ for channel, StdCut in zip(channels, StdCuts):
         data['J'] = Js_np
         data['popt'] = popt_list_np
         header = "channel,meanpulse_type,BI,BI_uncertainty,1-rp,rp_uncertainty,J,popt"
-
+        import csv
         np.savetxt(
             f"{BASE}/outputs/Systematics/BI_meanpulses_analysis_test.csv",
             data,
             delimiter=",",
             header=header,
             comments="",
-            fmt="%s,%s,%.18e,%.18e,%.18e,%.18e,%.18e,%s"
+            fmt="%s,%s,%.18e,%.18e,%.18e,%.18e,%.18e,%s",
+            quoting = csv.QUOTE_MINIMAL
         )
 
         print(f"BI saved at {BASE}/outputs/Systematics/BI_meanpulses_analysis_test.csv")
