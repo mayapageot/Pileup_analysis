@@ -14,33 +14,29 @@ from scipy.stats import norm
 import os
 # Ensure we have GPU available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-channel=3
-LED_amp = [0.028401334, 0.032891195, 0.035842195, 0.038979053, 0.03883822, 0.031177562, 0.021730503, 0.016601065, 0.0141078625]
-measurements = [779,    780,    781,    782,    783,    784,    785,    786,    787]
-ref_meas = 780
-ref_sensitivity = 1.4
-Gains_80V = 13.6
-NTL_noise_factor = 1e-7
-
-# channel=5
-# measurements = [767,768,769,770,771,772,773,774,775]
-# LED_amp = [0.085,0.1,0.11,0.13,0.143,0.137,0.063,0.047,0.039]
-# ref_meas = 770
-# ref_sensitivity = 2.0
-# Gains_80V = 10.6
-# NTL_noise_factor = 3e-8
-
-ref_amplitude = sim.ROI_amp_from_sensitivity(ref_sensitivity)
-WP_gain = np.array(LED_amp)/LED_amp[measurements.index(ref_meas)]
-
+channels= [3]*9 + [5]*9
+LED_amp = ([0.028401334, 0.032891195, 0.035842195, 0.038979053, 0.03883822, 0.031177562, 0.021730503, 0.016601065, 0.0141078625]+
+           [0.085,0.1,0.11,0.13,0.143,0.137,0.063,0.047,0.039])
+measurements = [779,    780,    781,    782,    783,    784,    785,    786,    787] + [767,768,769,770,771,772,773,774,775]
+ref_meas_list = [780]*9 + [770]*9
+ref_sensitivity_list = [1.4]*9 + [2.0]*9
+Gains_80V_list = [13.6]*9 + [10.6]*9
+NTL_noise_factor_list = [0] *9 + [0]*9
 J_values_all = []
 meas_values = []
-for meas in measurements:
+channel_list = []
+for idx, meas in enumerate(measurements):
+    channel = channels[idx]
+    Gains_80V = Gains_80V_list[idx]
+    NTL_noise_factor = NTL_noise_factor_list[idx]
+    ref_sensitivity = ref_sensitivity_list[idx]
+    ref_amplitude = sim.ROI_amp_from_sensitivity(ref_sensitivity)
+    WP_gain = np.array(LED_amp[idx])/np.array(LED_amp[measurements.index(ref_meas_list[idx])])
     mean_pulse_filtered = np.fromfile(f"{BASE}/outputs/meanpulses_build/meanpulse_measurement_{meas}_channel{channel}.bin")
     nps = (np.fromfile(f"{BASE}/outputs/NPS_study/NPS_measurement_{meas}_channel{channel}.bin") +
            NTL_noise_factor*np.abs(np.fft.fft(mean_pulse_filtered))**2)
     S, w, H_unit = an.compute_H(mean_pulse_filtered, nps, np.hanning)
-    signal_amp = ref_amplitude * WP_gain[measurements.index(meas)] * Gains_80V
+    signal_amp = ref_amplitude * WP_gain * Gains_80V
     acceptance = 0.9
     # Convert all arrays to torch tensors on GPU
     N_sigma = norm.ppf(1 - (1 - acceptance) * 100 / 100)
@@ -84,9 +80,10 @@ for meas in measurements:
                      N_sigma = N_sigma, full_output = False, use_interp = True)
     J_values_all.append(J.cpu().numpy())
     meas_values.append(meas)
-    data =np.column_stack([np.array(meas_values), np.array(J_values_all)])
+    channel_list.append(channel)
+    data =np.column_stack([np.array(channel_list),np.array(meas_values), np.array(J_values_all)])
     print(f"Measurement {meas}: J = {J:.6e}")
-    header = "measurement,J_value"
+    header = "channel,measurement,J_value"
     np.savetxt(
         f"{BASE}/outputs/Systematics/BI_WP_channel_5.csv",
         data,
