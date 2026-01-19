@@ -1030,7 +1030,7 @@ def build_mean_pulse(dataset, rms_thr, pulse_center_ratio=0.5, pulse_start_pos =
 
 def build_mean_pulse_filteralignement(dataset, rms_thr, H, pulse_center_ratio=0.5,
                                       pulse_start_pos=-100, pulse_end_pos=400,
-                                      amplitude_bounds=None, return_amp=False,
+                                      amplitude_bounds=None, return_amp=False, return_pulses=False,
                                       batch_size=2048, device="cpu", use_loader=False):
     """
         Builds the mean pulse from a dataset by aligning and normalizing waveforms using
@@ -1064,6 +1064,8 @@ def build_mean_pulse_filteralignement(dataset, rms_thr, H, pulse_center_ratio=0.
 
     if return_amp:
         amplitudes = []
+    if return_pulses:
+        pulses_out = []
     for pulses in loader:
         if isinstance(pulses, (list, tuple)):
             pulses = pulses[0]
@@ -1110,6 +1112,8 @@ def build_mean_pulse_filteralignement(dataset, rms_thr, H, pulse_center_ratio=0.
         max_val = pulses_aligned.max(dim=1).values
         if return_amp:
             amplitudes.append(max_val)
+        if return_pulses:
+            pulses_out.append(pulses_aligned.clone())
         pulses_norm = pulses_aligned / max_val[:, None]
 
         mean_pulse += pulses_norm.sum(dim=0)
@@ -1119,12 +1123,15 @@ def build_mean_pulse_filteralignement(dataset, rms_thr, H, pulse_center_ratio=0.
     if return_amp:
         amplitudes = torch.cat(amplitudes)
         return mean_pulse, amplitudes
+    if return_pulses:
+        pulses_out = torch.cat(pulses_out)
+        return mean_pulse, pulses_out
     return mean_pulse
 
 
 def build_mean_pulse_filteralignement_from_raw(dataset, rms_thr, nps, pulse_center_ratio=0.5,
                                       pulse_start_pos=-100, pulse_end_pos=400,
-                                      amplitude_bounds=None, return_amp=False,
+                                      amplitude_bounds=None, return_amp=False, return_pulses=False,
                                       batch_size=2048, device="cpu", use_loader=False):
 
     mean_pulse = build_mean_pulse(dataset, rms_thr = rms_thr,
@@ -1137,4 +1144,5 @@ def build_mean_pulse_filteralignement_from_raw(dataset, rms_thr, nps, pulse_cent
                                                             pulse_center_ratio=pulse_center_ratio,
                                       pulse_start_pos=pulse_start_pos, pulse_end_pos=pulse_end_pos,
                                       amplitude_bounds=amplitude_bounds,return_amp=return_amp,
+                                             return_pulses=return_pulses,
                                       batch_size=batch_size, device=device, use_loader=use_loader)
