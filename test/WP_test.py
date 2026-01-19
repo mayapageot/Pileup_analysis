@@ -14,21 +14,21 @@ from scipy.stats import norm
 import os
 # Ensure we have GPU available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# channel=3
-# LED_amp = [0.028401334, 0.032891195, 0.035842195, 0.038979053, 0.03883822, 0.031177562, 0.021730503, 0.016601065, 0.0141078625]
-# measurements = [779,    780,    781,    782,    783,    784,    785,    786,    787]
-# ref_meas = 780
-# ref_sensitivity = 1.4
-# Gains_80V = 13.6
-# NTL_noise_factor = 1e-7
+channel=3
+LED_amp = [0.028401334, 0.032891195, 0.035842195, 0.038979053, 0.03883822, 0.031177562, 0.021730503, 0.016601065, 0.0141078625]
+measurements = [779,    780,    781,    782,    783,    784,    785,    786,    787]
+ref_meas = 780
+ref_sensitivity = 1.4
+Gains_80V = 13.6
+NTL_noise_factor = 1e-7
 
-channel=5
-measurements = [767,768,769,770,771,772,773,774,775]
-LED_amp = [0.085,0.1,0.11,0.13,0.143,0.137,0.063,0.047,0.039]
-ref_meas = 770
-ref_sensitivity = 2.0
-Gains_80V = 10.6
-NTL_noise_factor = 3e-8
+# channel=5
+# measurements = [767,768,769,770,771,772,773,774,775]
+# LED_amp = [0.085,0.1,0.11,0.13,0.143,0.137,0.063,0.047,0.039]
+# ref_meas = 770
+# ref_sensitivity = 2.0
+# Gains_80V = 10.6
+# NTL_noise_factor = 3e-8
 
 ref_amplitude = sim.ROI_amp_from_sensitivity(ref_sensitivity)
 WP_gain = np.array(LED_amp)/LED_amp[measurements.index(ref_meas)]
