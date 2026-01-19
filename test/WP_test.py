@@ -18,7 +18,7 @@ channels= [3]*9 + [5]*9
 LED_amp = ([0.028401334, 0.032891195, 0.035842195, 0.038979053, 0.03883822, 0.031177562, 0.021730503, 0.016601065, 0.0141078625]+
            [0.085,0.1,0.11,0.13,0.143,0.137,0.063,0.047,0.039])
 measurements = [779,    780,    781,    782,    783,    784,    785,    786,    787] + [767,768,769,770,771,772,773,774,775]
-ref_meas_list = [780]*9 + [770]*9
+ref_LED_amp = [0.032891195]*9 + [0.13]*9
 ref_sensitivity_list = [1.4]*9 + [2.0]*9
 Gains_80V_list = [13.6]*9 + [10.6]*9
 NTL_noise_factor_list = [1e-7] *9 + [0.3e-7]*9
@@ -31,7 +31,7 @@ for idx, meas in enumerate(measurements):
     NTL_noise_factor = NTL_noise_factor_list[idx]
     ref_sensitivity = ref_sensitivity_list[idx]
     ref_amplitude = sim.ROI_amp_from_sensitivity(ref_sensitivity)
-    WP_gain = np.array(LED_amp[idx])/np.array(LED_amp[measurements.index(ref_meas_list[idx])])
+    WP_gain = LED_amp[idx]/ref_LED_amp[idx]
     mean_pulse_filtered = np.fromfile(f"{BASE}/outputs/meanpulses_build/meanpulse_measurement_{meas}_channel{channel}.bin")
     nps = (np.fromfile(f"{BASE}/outputs/NPS_study/NPS_measurement_{meas}_channel{channel}.bin") +
            NTL_noise_factor*np.abs(np.fft.fft(mean_pulse_filtered))**2)
