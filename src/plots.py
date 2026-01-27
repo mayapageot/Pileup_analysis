@@ -230,22 +230,33 @@ def J_vs_rp():
     plt.ylabel('1 - $r_p$')
     plt.show()
 
-
 def plot_Trial_vs_J():
-    fig, ax = plt.subplots()
-    for channel in [3, 5, 9, 11, 13, 15, 17, 19]:
-        J_values = np.load(f"../outputs/training_Js/channel_{channel}/J_90_V2.npy")
-        ax.plot(J_values, c = "k", alpha = 0.3)
-    ax.set_xlabel('Trials', fontsize = 16)
-    ax.set_ylabel('J', fontsize = 16)
-    ax.set_title('Trials vs J', fontsize = 18)
+    fig, ax = plt.subplots(figsize=(8,6))
 
-    # Make tick labels bigger
-    ax.tick_params(axis = 'both', which = 'major', labelsize = 14)
-    # Make the legend bigger
-    ax.legend(fontsize = 14)
-    fig.set_size_inches(8, 6)
-    fig.savefig("../outputs/plots/J_convergence_all_channels_eff90.pdf", dpi = 300)
+    channels = [3,5,9,11,13,15,17,19]
+    all_J = []
+    colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728",
+          "#9467bd", "#8c564b", "#e377c2", "#7f7f7f"]
+
+    for i, channel in enumerate(channels):
+        J_values = np.load(f"../outputs/training_Js/channel_{channel}/J_90_V2.npy")
+        all_J.append(J_values)
+        ax.plot(J_values, color=colors[i], alpha=0.7, label=f"Detector {channel}")
+
+    mean_J = np.mean(all_J, axis=0)
+    ax.plot(mean_J, color="black", lw=2.5, label="Mean")
+
+    ax.set_xlabel("Training iteration", fontsize=16)
+    ax.set_ylabel(r"Global pile-up misidentification rate $\langle \mathcal{M} \rangle$", fontsize=16)
+
+
+    ax.tick_params(axis='both', labelsize=14)
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=12, ncol=2)
+
+    fig.tight_layout()
+    fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/J_convergence_all_channels_eff90.pdf", dpi=300, bbox_inches="tight")
+    plt.show()
 
 def plot_m1_2_all_channel():
     channels = [3, 5, 9, 11, 13, 15, 17, 19]
@@ -750,45 +761,95 @@ def injected_pulse_template_test():
     plt.show()
 
 def injected_pulse_template_test_updated():
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
     df_1 = pd.read_csv("../outputs/Systematics/BI_meanpulse_test.csv")
     df_2 = pd.read_csv("../outputs/Systematics/BI_meanpulses_test_2.csv")
     df = pd.concat((df_1, df_2))
-    # Unique meanpulse types
-    types = df["meanpulse_type"].unique()
+
     types = ['raw', 'single_40Q', 'single_70Q', 'single_100Q', 'fit_bessel', 'mean']
-    print(types)
-    # Choose colors (3 types → 3 colors)
-    colors = ["red", "red", "red", "red", "blue", "green", "purple"]  # You can pick any colors you like
-    markers = ['o', "p", 9, "s", '^', "x"]
-    plt.figure(figsize = (8, 5))
 
-    for t, c, m in zip(types, colors, markers):
-        subset = df[df["meanpulse_type"] == t]
-        subset["channel_ID"] = subset["channel"].apply(lambda x: channel_ID[channels.index(x)]).values
+    # Colorblind-friendly palette
+    color_map = {
+        'raw': "#0072B2",
+        'single_40Q': "#0072B2",
+        'single_70Q': "#0072B2",
+        'single_100Q': "#0072B2",
+        'fit_bessel': "#E69F00",
+        'mean': "#CC79A7"
+    }
 
-        subset.sort_values(by = "channel_ID", inplace = True)
+    markers = {
+        'raw': '+',
+        'single_40Q': '+',
+        'single_70Q': '+',
+        'single_100Q': '+',
+        'fit_bessel': '+',
+        'mean': '+'
+    }
+
+    # Categorical x positions (0,1,2,3,...)
+    unique_channels = sorted(
+        df["channel"].unique(),
+        key=lambda x: channel_ID[channels.index(x)]
+    )
+
+    x_positions = {ch: i for i, ch in enumerate(unique_channels)}
+
+    # Jitter offsets
+    offsets = np.linspace(-0.3, 0.3, len(types))
+    x_offsets = dict(zip(types, offsets))
+
+    plt.figure(figsize=(8, 5))
+
+    for t in types:
+        subset = df[df["meanpulse_type"] == t].copy()
+        subset["x"] = subset["channel"].map(x_positions)
+
+        subset.sort_values(by="x", inplace=True)
+
+        x = subset["x"].values + x_offsets[t]
+
         plt.errorbar(
-            subset["channel_ID"].apply(str),  # x values: channel indices
+            x,
             subset["BI"] * 1e5,
-            yerr = subset["BI_uncertainty"] * 1e5,
-            ls = "",  # no line connecting points
-            marker = m,
-            color = c,
+            yerr=subset["BI_uncertainty"] * 1e5,
+            ls="",
+            marker=markers[t],
+            color=color_map[t],
+            markersize=6,
+            capsize=3
         )
-    for label, color in zip(["single high energy pulses\npicked @ different energies", "1 zero 4 poles + bessel fit", "average pulse"],
-                            ["r", "b", "g"]):
-        plt.plot([], [], marker = "s", ls = "", ms = 5, label = label, color = color)
 
-    # for channel in df["channel"].unique():
-    #     data_channel = df[df["channel"] == channel]
-    #     min_bi = data_channel["BI"].min()
-    #     max_bi = data_channel["BI"].max()
-    plt.xlabel("Detector ID",fontdict = {'size': 14})
-    plt.ylabel("BI [1e-5 cts/keV/kg/year]",fontdict = {'size': 14})
-    plt.legend(title = "Injected Pulse template",fontsize=12, title_fontsize=14)
-    plt.tick_params(axis = 'both', which = 'major', labelsize = 14)
-    plt.grid()
-    plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/pulse_template.pdf", dpi = 300)
+    # Grid BETWEEN channels
+    plt.grid(axis='x', which='major', alpha=0)
+    plt.grid(axis='y', alpha=0.5)
+
+    for i in range(len(unique_channels) - 1):
+        plt.axvline(i + 0.5, color='black', lw=0.8, zorder=0)
+    plt.xlim(-0.5,len(unique_channels)-0.5)
+    # X ticks = real detector IDs
+    plt.xticks(
+        range(len(unique_channels)),
+        [str(channel_ID[channels.index(ch)]) for ch in unique_channels]
+    )
+
+    # Legend
+    plt.plot([], [], marker="s", ls="", ms=6, color="#0072B2",
+             label="single high energy pulses\npicked @ different energies")
+    plt.plot([], [], marker="s", ls="", ms=6, color="#E69F00",
+             label="1 zero 4 poles + bessel fit")
+    plt.plot([], [], marker="s", ls="", ms=6, color="#CC79A7",
+             label="average pulse")
+
+    plt.xlabel("Detector ID", fontsize=14)
+    plt.ylabel("BI [1e-5 cts/keV/kg/year]", fontsize=14)
+    plt.legend(title="Injected Pulse template", fontsize=12, title_fontsize=14)
+    plt.tick_params(axis='both', which='major', labelsize=14)
+    plt.tight_layout()
+    plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/pulse_template.pdf", dpi=300)
     plt.show()
 channel_ID = [5, 9, 11, 10, 4, 2, 12, 3]
 channels = [3, 5, 9, 11, 13, 15, 17, 19]
@@ -825,34 +886,73 @@ def RT_A_fit_plot():
     fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/RT_A_fit.pdf", dpi = 300)
 
     plt.show()
-
-def grid_size_systematics_plot():
+def grid_size_systematics():
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
     import utility.functions as fn
 
     df = pd.read_csv("../outputs/Systematics/BI_varying_grid_size.csv")
-    for index_channel in np.argsort(channel_ID):
+
+    # Colorblind-safe palette (Okabe-Ito)
+    colors = ["#0072B2", "#E69F00", "#009E73", "#CC79A7",
+              "#56B4E9", "#D55E00", "#F0E442"]
+
+    markers = ['o', 's', 'D', '^', 'v', 'P', 'X']
+
+    plt.figure(figsize=(8, 6))
+
+    for i, index_channel in enumerate(np.argsort(channel_ID)):
         channel = channels[index_channel]
         data_channel = df[df["channel"] == channel]
-        # plt.errorbar(data_channel["grid_N"],data_channel["J"]*fn.K,marker='o',ls="")
-        grid_N = data_channel["grid_N"].array
-        BI = data_channel["J"].array * fn.K
-        plt.plot(grid_N, (BI - np.min(BI)) / np.min(BI) * 100, marker = 'o', ls = "",
-                 label = f"Detector ID {channel_ID[index_channel]}")
 
-        print(grid_N[np.argwhere((BI - np.min(BI)) / np.min(BI) < 0.01)[0][0]])
-    plt.axvline(90, color = 'black', ls = '--', label = 'threshold grid size \nto reach <1% variation')
-    plt.xlabel("Grid size N")
-    plt.ylabel("Relative difference to minimum BI [%]")
+        grid_N = data_channel["grid_N"].to_numpy()
+        BI = data_channel["J"].to_numpy() * fn.K
+
+        rel_diff = (BI - np.min(BI)) / np.min(BI) * 100
+
+        plt.plot(
+            grid_N,
+            rel_diff,
+            marker=markers[i % len(markers)],
+            color=colors[i % len(colors)],
+            ls="-",
+            lw=0.4,
+            markersize=6,
+            label=f"Detector ID {channel_ID[index_channel]}"
+        )
+
+        print(grid_N[np.argwhere(rel_diff < 0.01)[0][0]])
+
+    # Threshold line (neutral color)
+    plt.axvline(
+        90,
+        color="black",
+        ls="--",
+        linewidth=1.5,
+        label="threshold grid size\n(<1% variation)"
+    )
+
+    plt.xlabel("Grid size N", fontsize=14)
+    plt.ylabel("Relative difference to minimum BI [%]", fontsize=14)
+
     plt.xticks(grid_N[::2])
-    plt.xticks(grid_N[1::2], minor = True)
-    plt.yticks(np.arange(0, 14, 2))
-    plt.yticks(np.arange(1, 14, 2), minor = True)
-    plt.grid()
-    plt.grid(which = 'minor', ls = '--', alpha = 0.5)
-    plt.legend()
-    plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/grid_size_systematics.pdf", dpi = 300)
-    plt.show()
+    plt.xticks(grid_N[1::2], minor=True)
 
+    plt.yticks(np.arange(0, 14, 2))
+    plt.yticks(np.arange(1, 14, 2), minor=True)
+
+    plt.tick_params(axis='both', which='major', labelsize=13)
+
+    # Grid styling
+    plt.grid(which='major', alpha=0.4)
+    plt.grid(which='minor', ls='--', alpha=0.3)
+
+    plt.legend(fontsize=10, ncol=2)
+    plt.tight_layout()
+
+    plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/grid_size_systematics.pdf", dpi=300)
+    plt.show()
 def pulse_pos_systematic():
     df = pd.read_csv("../outputs/Systematics/BI_frac_4Pole_Bessel.csv")
     for index_channel in np.argsort(channel_ID):
@@ -870,7 +970,7 @@ def pulse_pos_systematic():
     plt.grid()
     plt.show()
 def window_size_systematic():
-    df = pd.read_csv("../outputs/Systematics/BI_window_size_4Pole_Bessel.csv")
+    df = pd.read_csv("../outputs/Systematics/BI_window_size.csv")
     for index_channel in np.argsort(channel_ID):
         channel = channels[index_channel]
         data_channel = df[df["channel"] == channel]
@@ -883,64 +983,209 @@ def window_size_systematic():
     plt.ylabel("BI [1e-5 cts/keV/kg/year]")
     plt.legend(ncols = 3, shadow = True)
     plt.grid()
-    plt.ylim(4.5, 9)
-    plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/window_size_systematics.pdf", dpi = 300)
+    plt.ylim(4.1, 7)
+    #plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/window_size_systematics.pdf", dpi = 300)
     plt.show()
-def simulated_analytical_BI():
+def compare_simulated_analytical_BI():
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
     import utility.functions as fn
-    df1 = pd.read_csv("../outputs/Systematics/BI_meanpulse_test.csv",engine="python")
-    df2 = pd.read_csv("../outputs/Systematics/BI_meanpulses_test_2.csv",engine="python")
-    df = pd.concat((df1,df2))
-    df["detector_id"] = df["channel"].apply(lambda x: channel_ID[channels.index(x)])
-    df.sort_values("detector_id",inplace = True)
-    print(df)
-    for mp_type in ["mean"]:#df["meanpulse_type"].unique():
-        print(mp_type)
-        df_sub = df[df["meanpulse_type"]==mp_type]
-        plt.errorbar(df_sub["detector_id"].apply(str),(df_sub["J"] * fn.K - df_sub["BI"]) / (df_sub["J"] * fn.K) * 100,
-                              yerr = df_sub["BI_uncertainty"] / (df_sub["J"] * fn.K) * 100, marker = 'o',
-                             ls = "").lines[0]
-    plt.axhline(0, color = 'black', ls = '--')
-    plt.xlabel("BI [1e-5 cts/keV/kg/year]",fontdict = {'size': 14})
-    plt.ylabel("Relative difference\nsimulated - analytical BI [%]",fontdict = {'size': 14})
-    # plt.title("Oberved bias in BI estimation from pulse risetime variation test",fontdict = {'size': 14})
 
-    plt.tick_params(axis = 'both', which = 'major', labelsize = 14)
+    # Load data
+    df1 = pd.read_csv("../outputs/Systematics/BI_meanpulse_test.csv", engine="python")
+    df2 = pd.read_csv("../outputs/Systematics/BI_meanpulses_test_2.csv", engine="python")
+    df = pd.concat((df1, df2), ignore_index=True)
+
+    # Add detector ID and sort
+    df["detector_id"] = df["channel"].apply(lambda x: channel_ID[channels.index(x)])
+    df.sort_values("detector_id", inplace=True)
+
+    # Select mean pulse only (can be extended later)
+    pulse_type = "mean"
+    df_sub = df[df["meanpulse_type"] == pulse_type].copy()
+
+    # Compute relative difference [%]
+    simulated_BI = df_sub["J"] * fn.K
+    analytical_BI = df_sub["BI"]
+
+    rel_diff = (simulated_BI - analytical_BI) / (simulated_BI + analytical_BI) * 200
+    rel_diff_unc = df_sub["BI_uncertainty"] / simulated_BI * 100
+
+    # Categorical x positions
+    detector_ids = df_sub["detector_id"].values
+    x = np.arange(len(detector_ids))
+
+    # Colorblind-friendly color
+    color = "#0072B2"  # Okabe-Ito blue
+
+    plt.figure(figsize=(8, 5))
+
+    plt.errorbar(
+        x,
+        rel_diff,
+        yerr=rel_diff_unc,
+        marker='o',
+        ls='',
+        capsize=3,
+        color=color
+    )
+
+    # Reference line
+    plt.axhline(0, color='black', ls='--', linewidth=1)
+
+    # Axes labels
+    plt.xlabel("Detector ID", fontsize=14)
+    plt.ylabel("Relative difference\n(simulated − analytical BI) [%]", fontsize=14)
+
+    # Ticks
+    plt.xticks(x, detector_ids.astype(str))
+    plt.tick_params(axis='both', which='major', labelsize=13)
+
+    # Grid
+    plt.grid(alpha=0.3)
+
     plt.tight_layout()
-    plt.grid()
-    # plt.ylim(-5, 10.1)
-    # plt.legend()
-    plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/simulated_analytical_BI.pdf", dpi = 300)
+    plt.savefig(
+        "/local/home/mp274748/Documents/paper/pile_up_cupid/figures/simulated_analytical_BI.pdf",
+        dpi=300
+    )
     plt.show()
+
 
 def WP_test():
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
     df = pd.read_csv(f"../outputs/Systematics/BI_WP.csv")
-    fig, ax1 = plt.subplots(1, figsize = (8.4, 7))
+
+    fig, ax1 = plt.subplots(1, figsize=(8.4, 7))
+
+    # Colorblind-friendly palette (Okabe-Ito)
+    color_ch1 = "#0072B2"  # blue
+    color_ch2 = "#CC79A7"  # purple
+
+    # Channel 3 (left axis)
     channel = 3
     data_channel = df[df["channel"] == channel]
-    p1, = ax1.plot(data_channel.loc[:, "biais_current"], data_channel.loc[:, "J_value"] * 100, marker = 'o', ls = '', )
+    data_channel.sort_values("biais_current",inplace=True)
+    p1, = ax1.plot(
+        data_channel["biais_current"],
+        data_channel["J_value"] * 100,
+        marker='o',
+        ls='-',
+        lw=1,
+        markersize=10,
+        color=color_ch1,
+        label=f"Detector {channel}"
+    )
+
+    # Channel 5 (right axis)
     channel = 5
     ax2 = ax1.twinx()
     data_channel = df[df["channel"] == channel]
-    p2, = ax2.plot(data_channel.loc[:, "biais_current"], data_channel.loc[:, "J_value"] * 100, marker = 'o', ls = '',
-                   c = 'orange')
-    ax1.set_xlabel("Bias current (nA)", fontdict = {'size': 14})
-    ax1.set_ylabel("Global pile-up misidentification rate channel 5 [%]", color = p1.get_color(),
-                   fontdict = {'size': 14})
-    ax2.set_ylabel("Global pile-up misidentification rate channel 9 [%]", color = p2.get_color(),
-                   fontdict = {'size': 14})
-    ax1.tick_params(axis = 'y', colors = p1.get_color())
-    ax2.tick_params(axis = 'y', colors = p2.get_color())
-    ax1.grid(axis = 'x')
+    data_channel.sort_values("biais_current",inplace=True)
+    p2, = ax2.plot(
+        data_channel["biais_current"],
+        data_channel["J_value"] * 100,
+        marker='s',
+        ls='-',
+        lw=1,
+        markersize=10,
+        color=color_ch2,
+        label=f"Detector {channel}"
+    )
+
+    # Labels
+    ax1.set_xlabel("Bias current (nA)", fontsize=14)
+
+    ax1.set_ylabel(
+        "Global pile-up misidentification rate detector 3 [%]",
+        color=color_ch1,
+        fontsize=14
+    )
+    ax2.set_ylabel(
+        "Global pile-up misidentification rate detector 5 [%]",
+        color=color_ch2,
+        fontsize=14
+    )
+
+    # Tick colors
+    ax1.tick_params(axis='y', colors=color_ch1)
+    ax2.tick_params(axis='y', colors=color_ch2)
+
+    ax1.tick_params(axis='both', which='major', labelsize=14)
+    ax2.tick_params(axis='both', which='major', labelsize=14)
+
+    # Grid only on x (neutral)
+    ax1.grid(axis='x', alpha=0.3)
+
+    # Offset text size
     ax1.yaxis.get_offset_text().set_fontsize(14)
     ax2.yaxis.get_offset_text().set_fontsize(14)
-    ax1.tick_params(axis = 'both', which = 'major', labelsize = 14)
-    ax2.tick_params(axis = 'both', which = 'major', labelsize = 14)
-    fig.tight_layout()
-    plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/WP_test.pdf", dpi = 300)
 
+    fig.tight_layout()
+    plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/WP_test.pdf", dpi=300)
+    plt.show()
+
+
+def meanpulse_with_dt_range():
+    from scipy.interpolate import interp1d
+    mp = np.load("../outputs/meanpulses_build/channel3_meanpulse_raw.npy")
+    mp = mp / np.max(mp)
+    mp_interp = interp1d(np.arange(len(mp)), mp, kind = 'cubic')
+    mp = mp_interp(np.linspace(0, len(mp) - 1, 10000))
+    fig, ax = plt.subplots(1, 1, figsize = (8, 6))
+    ax.plot(np.arange(- np.argmax(mp), len(mp) - np.argmax(mp)) * 4096 / 10000 * 1e-1, mp,
+            label = 'Pulse impulse response s(t)',color="black")
+    ax.fill_betweenx(np.array([-0.11, 1.1]), -8e-1, 8e-1, color = 'green', alpha = 0.3,
+                     label = '$\Delta t$ window : [-0.8 ms, 0.8 ms]')
+    ax.set_xlim(-5, 20)
+    ax.set_ylim(-0.04, 1.1)
+    plt.yticks(fontsize = 14)
+    plt.legend(fontsize = 16)
+    ax.set_xlabel("Time (ms)", fontsize = 16)
+    plt.xticks(fontsize = 14)
+    ax.grid(linestyle = '--', linewidth = 1)
+    fig.set_tight_layout(True)
+    fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/meanpulse_with_dt_range.pdf", dpi = 300)
+    plt.show()
+
+
+def r_PDF():
+    from utility.double_beta_spectrum import pdf_ratio2b
+    fig, ax = plt.subplots(figsize = (8, 6))
+    r = np.linspace(0, 1, 1000)
+    PDF = pdf_ratio2b(r)
+    PDF_norm = np.sum(PDF) * (r[1] - r[0])
+    PDF /= PDF_norm
+    ax.plot(r, PDF, color = 'red')
+    ax.fill_between(r, np.zeros_like(r), PDF, color = 'red', alpha = 0.2)
+    ax.set_xlabel('Relative amplitude r', fontsize = 16)
+    ax.set_ylabel('Probability Density', fontsize = 16)
+    plt.xticks(fontsize = 14)
+    plt.yticks(fontsize = 14)
+    ax.grid(linestyle = '--', linewidth = 1)
+    fig.set_tight_layout(True)
+    fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/r_pdf.pdf", dpi = 300)
+    plt.show()
+
+def bb_spectrum():
+    from utility.double_beta_spectrum import g
+    fig, ax = plt.subplots(figsize = (8, 6))
+    E = np.linspace(0, 3.034, 1000)
+    spectrum = g(E)
+    ax.plot(E, spectrum, color = 'blue')
+    ax.fill_between(E, np.zeros_like(E), spectrum, color = 'blue', alpha = 0.2)
+    ax.set_xlabel('Energy [MeV]', fontsize = 16)
+    ax.set_ylabel('Energy distribution', fontsize = 16)
+    plt.xticks(fontsize = 14)
+    plt.yticks(fontsize = 14)
+    ax.grid(linestyle = '--', linewidth = 1)
+    fig.set_tight_layout(True)
+    fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/bb_spectrum.pdf", dpi = 300)
     plt.show()
 
 
 if __name__ == "__main__":
-    WP_test()
+    window_size_systematic()
