@@ -1,7 +1,8 @@
 import sys
 from pathlib import Path
 # Add src to Python path dynamically
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+BASE = Path(__file__).resolve().parent.parent
+sys.path.append(str(BASE))
 import time
 import numpy as np
 import src.analysis as an
@@ -17,66 +18,78 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 BIs = []
 BI_uncertainties = []
 channel_list = []
-BASE = "../"
+J_list = []
 channels = [3, 5, 9, 11, 13, 15, 17, 19]
 channel_ID = [5, 9, 11, 10, 4, 2, 12, 3]
 StdCuts = [0.0003, 0.0004, 0.0008, 0.0006, 0.0012, 0.0007, 0.00035, 0.0025]
 for channel, StdCut in zip(channels, StdCuts):
-    channel = 3  # channels[index_channel]
-
-    # Load datasets and channel specifications
-    data_single, data_pileup, _ = ds.create_data_sets(channel, win_length = 2000, shift = 0, pos_prefix = "_bis")
-    # data_single, data_pileup = ds.create_data_sets_denoise(channel, win_length=2000, shift=0, pos_prefix="_bis")
-    nps_bis = np.load(f"{BASE}/results/NPS_study/NPS_channel{channel}_win{window_size}_cut{StdCut}_{meas_name}.npy")
-    nps_bis *= (8. / 3.)  # Adjust for Hann window effect
     meanpulse = np.fromfile(ds.find_file(f"{meas_name}_{channel:03}_???.bin_edmean.bin",
-                                         specific_subdir = "RUN9_pulse_injected_new/"))
+                                         specific_subdir="RUN9_pulse_injected_new/"))
+    # Load datasets and channel specifications
+    dataset_single_name = "pup_n1-d0_000813_20230628T161508"
+    file_path_single, path_pos_single = ds.find_files(meas_name, dataset_single_name, channel,
+                                                      specific_subdir="RUN9_pulse_injected_new/")
+    data_single = ds.CachedBinaryDataset_withgenerated(file_path_single, path_pos_single, 4096,
+                                                       pulse=meanpulse,
+                                                       n_windows=15999, win_shift=0)
+
+    dataset_pileup_name = "pup_n1-d8_000813_20230628T161508"
+    file_path_pileup, path_pos_pileup = ds.find_files(meas_name, dataset_pileup_name, channel,
+                                                      specific_subdir="RUN9_pulse_injected_new/")
+    data_pileup = ds.CachedBinaryDataset_withgenerated(file_path_pileup, path_pos_pileup, 4096,
+                                                       pulse=meanpulse,
+                                                       n_windows=15999, win_shift=0)
+    # data_single, data_pileup = ds.create_data_sets_denoise(channel, win_length=2000, shift=0, pos_prefix="_bis")
+    nps_bis = np.load(f"{BASE}/outputs/NPS_study/NPS_channel{channel}_win{window_size}_{meas_name}.npy")
+    nps_bis *= (8. / 3.)  # Adjust for Hann window effect
+
     meanpulse_bis = meanpulse[np.argmax(meanpulse) - window_size // 2:np.argmax(meanpulse) + window_size // 2]
     signal_amp = ds.get_amp_Q_val(channel)
-    S, w, H_unit = ds.compute_H(meanpulse_bis, nps_bis, np.hanning)
-    # Convert all arrays to torch tensors on GPU
-    S_torch = torch.tensor(S, dtype = torch.cfloat, device = device)
-    H_unit_torch = torch.tensor(H_unit, dtype = torch.cfloat, device = device)
-    w_torch = torch.tensor(w, dtype = torch.cfloat, device = device)
-    nps_torch = torch.tensor(nps_bis, dtype = torch.cfloat, device = device)
-    signal_amp_torch = torch.tensor(signal_amp, dtype = torch.float32, device = device)
-    signal_amp = ds.get_amp_Q_val(channel)
-    t_min, t_max, N_t = 0, 8e-4, 150
-    r_min, r_max, N_r = 0., .5, 75
-
-    ratio_distribution = pdf_ratio2b(np.linspace(r_min, r_max, N_r))
-    ratio_distribution /= np.mean(ratio_distribution)
-
-    # Convert data to PyTorch tensors
-    S_torch = torch.tensor(S, dtype = torch.cfloat)
-    H_unit_torch = torch.tensor(H_unit, dtype = torch.cfloat)
-    w_torch = torch.tensor(w, dtype = torch.cfloat)
-    t_torch = torch.linspace(t_min, t_max, N_t, dtype = torch.cfloat)
-    r_torch = torch.linspace(r_min, r_max, N_r, dtype = torch.cfloat)
-    nps_torch = torch.tensor(nps_bis, dtype = torch.cfloat)
-    signal_amp_torch = torch.tensor(signal_amp, dtype = torch.float32)
-    ratio_distribution_torch = torch.tensor(ratio_distribution, dtype = torch.cfloat)
 
     # Loop over acceptance levels
     # acceptances = [0.7, 0.8, 0.84, 0.87, 0.9, 0.92, 0.93, 0.94, 0.95, 0.96, 0.99]
     acceptances = [0.9]
     for acceptance in acceptances:
         N_sigma = norm.ppf(1 - (1 - acceptance) * 100 / 100)
+        S, w, H_unit = an.compute_H(meanpulse_bis, nps_bis, np.hanning)
+        # Convert all arrays to torch tensors on GPU
+        S_torch = torch.tensor(S, dtype=torch.cfloat, device=device)
+        H_unit_torch = torch.tensor(H_unit, dtype=torch.cfloat, device=device)
+        w_torch = torch.tensor(w, dtype=torch.cfloat, device=device)
+        nps_torch = torch.tensor(nps_bis, dtype=torch.cfloat, device=device)
+        signal_amp_torch = torch.tensor(signal_amp, dtype=torch.float32, device=device)
+
+        t_min, t_max, N_t = 0, 8e-4, 150
+        r_min, r_max, N_r = 0., .5, 75
+        ratio_distribution = pdf_ratio2b(np.linspace(r_min, r_max, N_r))
+        ratio_distribution /= np.mean(ratio_distribution)
+
+        t_torch = torch.linspace(t_min, t_max, N_t, dtype=torch.cfloat, device=device)
+        r_torch = torch.linspace(r_min, r_max, N_r, dtype=torch.cfloat, device=device)
+        ratio_distribution_torch = torch.tensor(ratio_distribution, dtype=torch.cfloat, device=device)
+
+        f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
+                                                       signal_amp_torch, ratio_distribution_torch, N_sigma=N_sigma,
+                                                       n_trials=1000, verbose=False)
         # f1_opt, f2_opt = np.load(f"../outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance*100):d}_d0.npy")
         # print(torch.tensor(f1_0,dtype=torch.float).size())
-        f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
-                                                       signal_amp_torch, ratio_distribution_torch, N_sigma = N_sigma,
-                                                       n_trials = 500, verbose = False)
         # J = J_values[-1]
         # save_filter_function
-        np.save(f"../outputs/training_Js/channel_{channel}/J_{int(acceptance * 100):d}_base", np.array(J_values))
-        np.save(f"../outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance * 100):d}_base",
+        np.save(f"{BASE}/outputs/training_Js/channel_{channel}/J_{int(acceptance * 100):d}_base", np.array(J_values))
+        np.save(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance * 100):d}_base",
                 np.array([f1_opt, f2_opt]))
-        f1_t, f2_t = torch.tensor(f1_opt, dtype = torch.float32), torch.tensor(f2_opt, dtype = torch.float32)
+        f1_t = torch.tensor(f1_opt, dtype=torch.float32, device=device)
+        f2_t = torch.tensor(f2_opt, dtype=torch.float32, device=device)
+
+        S_H_delayed, S_H, S2_over_nps = an.precompute_constants(S_torch, H_unit_torch, w_torch, t_torch, nps_torch)
+
+        f1_t /= torch.mean(f1_t * S_H).real
+        f2_t /= torch.mean(f2_t * S_H).real
 
         S_H_delayed, S_H, S2_over_nps = an.precompute_constants(S_torch, H_unit_torch, w_torch, t_torch, nps_torch)
         J = an.compute_J(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
-                         N_sigma = N_sigma)
+                         N_sigma=N_sigma, full_output=False, use_interp=True)
+
 
         # Compute PSD and BI
         BI, rp, sigma_rp, sigma_BI = an.compute_BI_torch(
@@ -95,6 +108,7 @@ for channel, StdCut in zip(channels, StdCuts):
         BIs.append(float(BI))
         BI_uncertainties.append(float(sigma_BI))
         channel_list.append(channel)
+        J_list.append(J.cpu().numpy())
         # Append results to DataFrame
         # out_data = pd.concat([out_data, pd.DataFrame([{"channel_ID": channel_ID[index_channel], "channel": channel,
         #                                                "acceptance": acceptance, "BI": BI, "rp": rp, "J": J_values[-1]}])], ignore_index=True)
@@ -103,8 +117,8 @@ for channel, StdCut in zip(channels, StdCuts):
         print(f"Channel {channel}, Acceptance {acceptance}: J={J}, 1-rp={1 - rp}, BI={BI}")
         # pd.DataFrame({"channel": channel_list, "BI": BIs, "BI_uncertainty": BI_uncertainties}).to_csv('../outputs/BI_results_base.csv', index=False)
 
-        data = np.column_stack([channel_list, BIs, BI_uncertainties])
-        header = "channel,BI,BI_err"
+        data = np.column_stack([channel_list, BIs, BI_uncertainties,J_list])
+        header = "channel,BI,BI_err,J"
 
         np.savetxt(
             f"{BASE}/outputs/BI_results_base.csv",
