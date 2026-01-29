@@ -43,7 +43,7 @@ for channel, StdCut in zip(channels, StdCuts):
     nps_bis = np.load(f"{BASE}/outputs/NPS_study/NPS_channel{channel}_win{window_size}_{meas_name}.npy")
     nps_bis *= (8. / 3.)  # Adjust for Hann window effect
 
-    meanpulse_bis = meanpulse[np.argmax(meanpulse) - window_size // 2:np.argmax(meanpulse) + window_size // 2]
+    meanpulse_bis = np.load(f"{BASE}/outputs/meanpulses_build/channel{channel}_meanpulse_raw.npy")
     signal_amp = ds.get_amp_Q_val(channel)
 
     # Loop over acceptance levels
@@ -75,8 +75,8 @@ for channel, StdCut in zip(channels, StdCuts):
         # print(torch.tensor(f1_0,dtype=torch.float).size())
         # J = J_values[-1]
         # save_filter_function
-        np.save(f"{BASE}/outputs/training_Js/channel_{channel}/J_{int(acceptance * 100):d}_base", np.array(J_values))
-        np.save(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance * 100):d}_base",
+        np.save(f"{BASE}/outputs/training_Js/channel_{channel}/J_{int(acceptance * 100):d}_base_true_mp", np.array(J_values))
+        np.save(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance * 100):d}_base_true_mp",
                 np.array([f1_opt, f2_opt]))
         f1_t = torch.tensor(f1_opt, dtype=torch.float32, device=device)
         f2_t = torch.tensor(f2_opt, dtype=torch.float32, device=device)
@@ -118,7 +118,7 @@ for channel, StdCut in zip(channels, StdCuts):
         # pd.DataFrame({"channel": channel_list, "BI": BIs, "BI_uncertainty": BI_uncertainties}).to_csv('../outputs/BI_results_base.csv', index=False)
 
         data = np.column_stack([channel_list, BIs, BI_uncertainties,J_list])
-        header = "channel,BI,BI_err,J"
+        header = "channel,BI,BI_uncertainty,J"
 
         np.savetxt(
             f"{BASE}/outputs/BI_results_base.csv",
