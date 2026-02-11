@@ -24,6 +24,7 @@ channels = [3, 5, 9, 11, 13, 15, 17, 19]
 grid_Ns = [i*10 for i in range(1,20)]
 
 BIs = []
+BI_uncertainties = []
 rps = []
 Js = []
 grid_Ns_all = []
@@ -31,7 +32,23 @@ channel_data = []
 for channel, StdCut in zip(channels, StdCuts):
     window_size = 4096
     meas_name = "000813_20230628T161508"
+    meanpulse = np.fromfile(ds.find_file(f"{meas_name}_{channel:03}_???.bin_edmean.bin",
+                                         specific_subdir="RUN9_pulse_injected_new/"))
+    # Load datasets and channel specifications
+    dataset_single_name = "pup_n1-d0_000813_20230628T161508"
+    file_path_single, path_pos_single = ds.find_files(meas_name, dataset_single_name, channel,
+                                                      specific_subdir="RUN9_pulse_injected_new/")
+    data_single = ds.CachedBinaryDataset_withgenerated(file_path_single, path_pos_single, 4096,
+                                                       pulse=meanpulse,
+                                                       n_windows=15999, win_shift=0)
 
+    dataset_pileup_name = "pup_n1-d8_000813_20230628T161508"
+    file_path_pileup, path_pos_pileup = ds.find_files(meas_name, dataset_pileup_name, channel,
+                                                      specific_subdir="RUN9_pulse_injected_new/")
+    data_pileup = ds.CachedBinaryDataset_withgenerated(file_path_pileup, path_pos_pileup, 4096,
+                                                       pulse=meanpulse,
+                                                       n_windows=15999, win_shift=0)
+    # data_single, data_pileup = ds.create_data_sets_denoise(channel, win_length=2000, shift=0, pos_prefix="_bis")
     nps_bis = np.load(f"{BASE}/outputs/NPS_study/NPS_channel{channel}_win{window_size}_{meas_name}.npy")
     nps_bis *= (8. / 3.)  # Adjust for Hann window effect
     acceptance = 0.9
@@ -61,10 +78,18 @@ for channel, StdCut in zip(channels, StdCuts):
         r_torch = torch.linspace(r_min, r_max, N_r, dtype=torch.cfloat, device=device)
         ratio_distribution_torch = torch.tensor(ratio_distribution, dtype=torch.cfloat, device=device)
 
-        f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
-                                                       signal_amp_torch, ratio_distribution_torch, N_sigma = N_sigma,
-                                                       n_trials = 500, verbose = False)
-
+        # f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
+        #                                                signal_amp_torch, ratio_distribution_torch, N_sigma = N_sigma,
+        #                                                n_trials = 500, verbose = False)
+        directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/N_grid/"
+        os.makedirs(directory_path, exist_ok=True)
+        # np.save(directory_path +
+        #         f"functions_eff{int(acceptance * 100):d}_N_grid_{grid_N}",
+        #         np.array([f1_opt, f2_opt]))
+        # np.save(directory_path +
+        #         f"J_{int(acceptance * 100):d}_N_grid_{grid_N}",
+        #         np.array(J_values))
+        f1_opt, f2_opt = np.load(directory_path + f"functions_eff{int(acceptance * 100):d}_N_grid_{grid_N}.npy")
         f1_t = torch.tensor(f1_opt, dtype = torch.float32, device = device)
         f2_t = torch.tensor(f2_opt, dtype = torch.float32, device = device)
 
@@ -76,12 +101,27 @@ for channel, StdCut in zip(channels, StdCuts):
         S_H_delayed, S_H, S2_over_nps = an.precompute_constants(S_torch, H_unit_torch, w_torch, t_torch, nps_torch)
         J = an.compute_J(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
                          N_sigma = N_sigma, full_output = False, use_interp = True)
+        BI, rp, sigma_rp, sigma_BI = an.compute_BI_torch(
+            data_pileup,
+            data_single,
+            acceptance,
+            H_unit_torch,
+            f1_t,
+            f2_t,
+            window_fct=np.hanning,
+            n_deriv=0,
+            compute_uncertainty=True,
+            batch_size=2048 * 2,
+            use_loader=False
+        )
+        BIs.append(float(BI))
+        BI_uncertainties.append(float(sigma_BI))
         Js.append(J.item())
         channel_data.append(channel)
         grid_Ns_all.append(grid_N)
 
 
-        data = np.column_stack([np.array(channel_data), np.array(grid_Ns_all), np.array(Js)])
+        data = np.column_stack([np.array(channel_data), np.array(grid_Ns_all),np.array(BIs),np.array(BI_uncertainties), np.array(Js)])
 
         header = "channel,grid_N,J"
 
