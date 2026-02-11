@@ -1121,7 +1121,8 @@ def build_mean_pulse_filteralignement(dataset, rms_thr, H, pulse_center_ratio=0.
 
     mean_pulse /= total_count
     if return_amp:
-        amplitudes = torch.cat(amplitudes)
+
+        amplitudes = None if len(amplitudes)==0 else torch.cat(amplitudes)
         return mean_pulse, amplitudes
     if return_pulses:
         pulses_out = torch.cat(pulses_out)
