@@ -19,12 +19,22 @@ meas_values = []
 channel_list = []
 directory = f"/feynman/work/projets/cupid/data/Ulisse/RUN121/"
 rms_amp_data = np.loadtxt(directory+"rms_amp_RUN121.csv",delimiter=",",dtype=str)[1:]
+data = np.loadtxt(
+    f"{BASE}/outputs/Systematics/BI_WP_RUN121_Ulysse.csv",
+    delimiter=",",
+    skiprows=1   # skip header
+)
 
+channel_list    = data[:, 0].astype(int).tolist()
+meas_values     = data[:, 1].astype(int).tolist()
+J_values_all    = data[:, 2].astype(float).tolist()
 for data in rms_amp_data:
     file_name = data[0]
     meas = int(data[4])
     channel = int(data[3])
     amp = float(data[2])
+    if meas<16:
+        continue
     try:
         mean_pulse_filtered = np.load(directory+f"MP_RUN121_{file_name.split('.bin')[0]}.npy")
         nps = np.load(directory+f"NPS_RUN121_{file_name.split('.bin')[0]}.npy")

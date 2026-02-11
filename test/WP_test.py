@@ -15,7 +15,7 @@ import os
 # Ensure we have GPU available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 channels= [3]*9 + [5]*9
-LED_amp = ([0.028401334, 0.032891195, 0.035842195, 0.038979053, 0.03883822, 0.031177562, 0.021730503, 0.016601065, 0.0141078625]+
+LED_amp = ([0.028384615, 0.032924052, 0.035835776, 0.038984988, 0.03883822, 0.031177562, 0.021730503, 0.016601065, 0.014121097]+
            [0.085,0.1,0.11,0.13,0.143,0.137,0.063,0.047,0.039])
 measurements = [779,    780,    781,    782,    783,    784,    785,    786,    787] + [767,768,769,770,771,772,773,774,775]
 ref_LED_amp = [0.032891195]*9 + [0.13]*9
@@ -46,8 +46,8 @@ for idx, meas in enumerate(measurements):
     nps_torch = torch.tensor(nps, dtype = torch.cfloat, device = device)
     signal_amp_torch = torch.tensor(signal_amp, dtype = torch.float32, device = device)
 
-    t_min, t_max, N_t = 0, 8e-4, 50
-    r_min, r_max, N_r = 0., .5, 50
+    t_min, t_max, N_t = 0, 8e-4, 100
+    r_min, r_max, N_r = 0., .5, 100
 
     ratio_distribution = pdf_ratio2b(np.linspace(r_min, r_max, N_r))
     ratio_distribution /= np.mean(ratio_distribution)
@@ -59,14 +59,14 @@ for idx, meas in enumerate(measurements):
     f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
                                                    signal_amp_torch, ratio_distribution_torch, N_sigma = N_sigma,
                                                    n_trials = 500, verbose = False)
-    directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/WP_test/"
-    os.makedirs(directory_path, exist_ok = True)
-    np.save(directory_path +
-            f"channel{channel}_functions_eff{int(acceptance * 100):d}_WP_test_{meas}",
-            np.array([f1_opt, f2_opt]))
-    np.save(directory_path +
-            f"channel{channel}_J_{int(acceptance * 100):d}_WP_test_{meas}",
-            np.array(J_values))
+    # directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/WP_test/"
+    # os.makedirs(directory_path, exist_ok = True)
+    # np.save(directory_path +
+    #         f"channel{channel}_functions_eff{int(acceptance * 100):d}_WP_test_{meas}",
+    #         np.array([f1_opt, f2_opt]))
+    # np.save(directory_path +
+    #         f"channel{channel}_J_{int(acceptance * 100):d}_WP_test_{meas}",
+    #         np.array(J_values))
     f1_t = torch.tensor(f1_opt, dtype = torch.float32, device = device)
     f2_t = torch.tensor(f2_opt, dtype = torch.float32, device = device)
 
@@ -85,7 +85,7 @@ for idx, meas in enumerate(measurements):
     print(f"Measurement {meas}: J = {J:.6e}")
     header = "channel,measurement,J_value"
     np.savetxt(
-        f"{BASE}/outputs/Systematics/BI_WP.csv",
+        f"{BASE}/outputs/Systematics/BI_WP_RUN121_Ulysse.csv",
         data,
         comments="",
         delimiter = ",",

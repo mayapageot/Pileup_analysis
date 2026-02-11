@@ -59,8 +59,8 @@ for channel, StdCut in zip(channels, StdCuts):
         nps_torch = torch.tensor(nps_bis, dtype=torch.cfloat, device=device)
         signal_amp_torch = torch.tensor(signal_amp, dtype=torch.float32, device=device)
 
-        t_min, t_max, N_t = 0, 8e-4, 150
-        r_min, r_max, N_r = 0., .5, 75
+        t_min, t_max, N_t = 0, 8e-4, 100
+        r_min, r_max, N_r = 0., .5, 100
         ratio_distribution = pdf_ratio2b(np.linspace(r_min, r_max, N_r))
         ratio_distribution /= np.mean(ratio_distribution)
 
@@ -75,8 +75,8 @@ for channel, StdCut in zip(channels, StdCuts):
         # print(torch.tensor(f1_0,dtype=torch.float).size())
         # J = J_values[-1]
         # save_filter_function
-        np.save(f"{BASE}/outputs/training_Js/channel_{channel}/J_{int(acceptance * 100):d}_base_true_mp", np.array(J_values))
-        np.save(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance * 100):d}_base_true_mp",
+        np.save(f"{BASE}/outputs/training_Js/channel_{channel}/J_{int(acceptance * 100):d}_base_true_mp_bis", np.array(J_values))
+        np.save(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance * 100):d}_base_true_mp_bis",
                 np.array([f1_opt, f2_opt]))
         f1_t = torch.tensor(f1_opt, dtype=torch.float32, device=device)
         f2_t = torch.tensor(f2_opt, dtype=torch.float32, device=device)
@@ -121,7 +121,7 @@ for channel, StdCut in zip(channels, StdCuts):
         header = "channel,BI,BI_uncertainty,J"
 
         np.savetxt(
-            f"{BASE}/outputs/BI_results_base.csv",
+            f"{BASE}/outputs/BI_results_base_bis.csv",
             data,
             delimiter = ",",
             header = header,
