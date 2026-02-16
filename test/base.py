@@ -68,9 +68,14 @@ for channel, StdCut in zip(channels, StdCuts):
         r_torch = torch.linspace(r_min, r_max, N_r, dtype=torch.cfloat, device=device)
         ratio_distribution_torch = torch.tensor(ratio_distribution, dtype=torch.cfloat, device=device)
 
+        torch.cuda.synchronize()
+        t0 = time.time()
         f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
                                                        signal_amp_torch, ratio_distribution_torch, N_sigma=N_sigma,
                                                        n_trials=1000, verbose=False)
+        torch.cuda.synchronize()
+        t1 = time.time()
+        print("Time:", t1 - t0)
         # f1_opt, f2_opt = np.load(f"../outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance*100):d}_d0.npy")
         # print(torch.tensor(f1_0,dtype=torch.float).size())
         # J = J_values[-1]
@@ -114,7 +119,9 @@ for channel, StdCut in zip(channels, StdCuts):
         #                                                "acceptance": acceptance, "BI": BI, "rp": rp, "J": J_values[-1]}])], ignore_index=True)
         # Save results to CSV
         # out_data.to_csv('../outputs/BI_results_interp_d0.csv', index=False)
+        print("max memory: ",torch.cuda.max_memory_allocated() / 1024**2)
         print(f"Channel {channel}, Acceptance {acceptance}: J={J}, 1-rp={1 - rp}, BI={BI}")
+
         # pd.DataFrame({"channel": channel_list, "BI": BIs, "BI_uncertainty": BI_uncertainties}).to_csv('../outputs/BI_results_base.csv', index=False)
 
         data = np.column_stack([channel_list, BIs, BI_uncertainties,J_list])
