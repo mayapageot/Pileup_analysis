@@ -21,14 +21,16 @@ StdCuts = [0.0003, 0.0004, 0.0008, 0.0006, 0.0012, 0.0007, 0.00035, 0.0025]
 channels = [3, 5, 9, 11, 13, 15, 17, 19]
 # channels = [11, 13, 15]
 # channels = [11]
-grid_Ns = [i*10 for i in range(1,20)]
+grid_Ns = [2,5,8]+[i*10 for i in range(1,20)]
 
 BIs = []
 BI_uncertainties = []
 rps = []
 Js = []
-grid_Ns_all = []
+grid_N_rs= []
+grid_N_ts= []
 channel_data = []
+t_trains = []
 for channel, StdCut in zip(channels, StdCuts):
     window_size = 4096
     meas_name = "000813_20230628T161508"
@@ -53,10 +55,9 @@ for channel, StdCut in zip(channels, StdCuts):
     nps_bis *= (8. / 3.)  # Adjust for Hann window effect
     acceptance = 0.9
     n_deriv = 0
-    _, _, _, _, pulse_factor, _ = ds.get_channel_specs(channel, n_deriv=n_deriv,window_fct=np.hanning)
-    signal_amp = ds.get_amp_Q_val(channel) * pulse_factor
-    mean_pulse_filtered = np.load(f"{BASE}/outputs/meanpulses_build/channel{channel}_meanpulse_time_0.npy")
-    S, w, H_unit = an.compute_H(mean_pulse_filtered, nps_bis, np.hanning)
+    meanpulse_bis = np.load(f"{BASE}/outputs/meanpulses_build/channel{channel}_meanpulse_raw.npy")
+    signal_amp = ds.get_amp_Q_val(channel)
+    S, w, H_unit = an.compute_H(meanpulse_bis, nps_bis, np.hanning)
 
     # Convert all arrays to torch tensors on GPU
     N_sigma = norm.ppf(1 - (1 - acceptance) * 100 / 100)
@@ -67,9 +68,10 @@ for channel, StdCut in zip(channels, StdCuts):
     signal_amp_torch = torch.tensor(signal_amp, dtype = torch.float32, device = device)
 
 
-    for grid_N in grid_Ns:
-        t_min, t_max, N_t = 0, 8e-4, grid_N
-        r_min, r_max, N_r = 0., .5, grid_N
+    for grid_N_t in grid_Ns:
+        grid_N_r = grid_N_t
+        t_min, t_max, N_t = 0, 8e-4, grid_N_t
+        r_min, r_max, N_r = 0., .5, grid_N_r
 
         ratio_distribution = pdf_ratio2b(np.linspace(r_min, r_max, N_r))
         ratio_distribution /= np.mean(ratio_distribution)
@@ -77,19 +79,23 @@ for channel, StdCut in zip(channels, StdCuts):
         t_torch = torch.linspace(t_min, t_max, N_t, dtype=torch.cfloat, device=device)
         r_torch = torch.linspace(r_min, r_max, N_r, dtype=torch.cfloat, device=device)
         ratio_distribution_torch = torch.tensor(ratio_distribution, dtype=torch.cfloat, device=device)
-
-        # f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
-        #                                                signal_amp_torch, ratio_distribution_torch, N_sigma = N_sigma,
-        #                                                n_trials = 500, verbose = False)
+        torch.cuda.synchronize()
+        t0 = time.time()
+        f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
+                                                       signal_amp_torch, ratio_distribution_torch, N_sigma = N_sigma,
+                                                       n_trials = 500, verbose = False)
+        torch.cuda.synchronize()
+        t1 = time.time()
+        t_train = t1 - t0
         directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/N_grid/"
         os.makedirs(directory_path, exist_ok=True)
-        # np.save(directory_path +
-        #         f"functions_eff{int(acceptance * 100):d}_N_grid_{grid_N}",
-        #         np.array([f1_opt, f2_opt]))
-        # np.save(directory_path +
-        #         f"J_{int(acceptance * 100):d}_N_grid_{grid_N}",
-        #         np.array(J_values))
-        f1_opt, f2_opt = np.load(directory_path + f"functions_eff{int(acceptance * 100):d}_N_grid_{grid_N}.npy")
+        np.save(directory_path +
+                f"functions_eff{int(acceptance * 100):d}_N_grid_r_{grid_N_r}_t_{grid_N_t}",
+                np.array([f1_opt, f2_opt]))
+        np.save(directory_path +
+                f"J_{int(acceptance * 100):d}_N_grid_r_{grid_N_r}_t_{grid_N_t}",
+                np.array(J_values))
+        #f1_opt, f2_opt = np.load(directory_path + f"functions_eff{int(acceptance * 100):d}_N_grid_{grid_N}.npy")
         f1_t = torch.tensor(f1_opt, dtype = torch.float32, device = device)
         f2_t = torch.tensor(f2_opt, dtype = torch.float32, device = device)
 
@@ -118,12 +124,14 @@ for channel, StdCut in zip(channels, StdCuts):
         BI_uncertainties.append(float(sigma_BI))
         Js.append(J.item())
         channel_data.append(channel)
-        grid_Ns_all.append(grid_N)
+        grid_N_ts.append(grid_N_t)
+        grid_N_rs.append(grid_N_r)
+        t_trains.append(t_train)
 
+        data = np.column_stack([np.array(channel_data), np.array(grid_N_ts), np.array(grid_N_rs),np.array(BIs),
+                                np.array(BI_uncertainties), np.array(Js), np.array(t_trains)])
 
-        data = np.column_stack([np.array(channel_data), np.array(grid_Ns_all),np.array(BIs),np.array(BI_uncertainties), np.array(Js)])
-
-        header = "channel,grid_N,J"
+        header = "channel,grid_N_t,grid_N_r,BI,BI_uncertainty,J,training_time_seconds"
 
         np.savetxt(
             f"{BASE}/outputs/Systematics/BI_varying_grid_size.csv",
