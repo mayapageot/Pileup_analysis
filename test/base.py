@@ -12,7 +12,7 @@ from utility.double_beta_spectrum import pdf_ratio2b
 import torch
 from scipy.stats import norm
 n_deriv = 0
-window_size = 4096
+window_size = 2048
 meas_name = "000813_20230628T161508"
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 BIs = []
@@ -29,14 +29,14 @@ for channel, StdCut in zip(channels, StdCuts):
     dataset_single_name = "pup_n1-d0_000813_20230628T161508"
     file_path_single, path_pos_single = ds.find_files(meas_name, dataset_single_name, channel,
                                                       specific_subdir="RUN9_pulse_injected_new/")
-    data_single = ds.CachedBinaryDataset_withgenerated(file_path_single, path_pos_single, 4096,
+    data_single = ds.CachedBinaryDataset_withgenerated(file_path_single, path_pos_single, window_size,
                                                        pulse=meanpulse,
                                                        n_windows=15999, win_shift=0)
 
     dataset_pileup_name = "pup_n1-d8_000813_20230628T161508"
     file_path_pileup, path_pos_pileup = ds.find_files(meas_name, dataset_pileup_name, channel,
                                                       specific_subdir="RUN9_pulse_injected_new/")
-    data_pileup = ds.CachedBinaryDataset_withgenerated(file_path_pileup, path_pos_pileup, 4096,
+    data_pileup = ds.CachedBinaryDataset_withgenerated(file_path_pileup, path_pos_pileup, window_size,
                                                        pulse=meanpulse,
                                                        n_windows=15999, win_shift=0)
     # data_single, data_pileup = ds.create_data_sets_denoise(channel, win_length=2000, shift=0, pos_prefix="_bis")
@@ -44,6 +44,7 @@ for channel, StdCut in zip(channels, StdCuts):
     nps_bis *= (8. / 3.)  # Adjust for Hann window effect
 
     meanpulse_bis = np.load(f"{BASE}/outputs/meanpulses_build/channel{channel}_meanpulse_raw.npy")
+    meanpulse_bis = meanpulse_bis[np.argmax(meanpulse_bis)-window_size//2:np.argmax(meanpulse_bis)+window_size//2]
     signal_amp = ds.get_amp_Q_val(channel)
 
     # Loop over acceptance levels
@@ -80,8 +81,8 @@ for channel, StdCut in zip(channels, StdCuts):
         # print(torch.tensor(f1_0,dtype=torch.float).size())
         # J = J_values[-1]
         # save_filter_function
-        np.save(f"{BASE}/outputs/training_Js/channel_{channel}/J_{int(acceptance * 100):d}_base_true_mp_bis", np.array(J_values))
-        np.save(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance * 100):d}_base_true_mp_bis",
+        np.save(f"{BASE}/outputs/training_Js/channel_{channel}/J_{int(acceptance * 100):d}_base_true_mp_2048", np.array(J_values))
+        np.save(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance * 100):d}_base_true_mp_2048",
                 np.array([f1_opt, f2_opt]))
         f1_t = torch.tensor(f1_opt, dtype=torch.float32, device=device)
         f2_t = torch.tensor(f2_opt, dtype=torch.float32, device=device)
@@ -128,7 +129,7 @@ for channel, StdCut in zip(channels, StdCuts):
         header = "channel,BI,BI_uncertainty,J"
 
         np.savetxt(
-            f"{BASE}/outputs/BI_results_base_bis.csv",
+            f"{BASE}/outputs/BI_results_base_2048.csv",
             data,
             delimiter = ",",
             header = header,
