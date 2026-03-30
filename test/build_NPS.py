@@ -31,5 +31,5 @@ for channel, StdCut in zip(channels, StdCuts):
                                       use_loader=False,device=device)
         directory_path = f"{BASE}/outputs/NPS_study/"
         os.makedirs(directory_path, exist_ok=True)
-        np.save(f"{BASE}/outputs/NPS_study/NPS_channel{channel}_win{window_size}_cut{StdCut}_{meas_name}.npy",
+        np.save(f"{BASE}/outputs/NPS_study/NPS_channel{channel}_win{window_size}_{meas_name}_denoised.npy",
                 nps)

@@ -1,7 +1,14 @@
 import torch
 import math
-def calculate_K_factor(Activity = 3.09E-03,  # Activity in Bq (N/s)
-                        LMO_MASS = 0.308,  # Mass of LMO in kg
+# def calculate_K_factor(Activity = 3.09E-03,  # Activity in Bq (N/s)
+#                         LMO_MASS = 0.308,  # Mass of LMO in kg
+#                         second_in_year = 3600 * 24 * 365,  # Number of seconds in a year
+#                         Probability = 3.41E-04,  # Given probability factor
+#                         correction_factor = 1,  # Factor for corrections
+#                         dt = 0.8 , # Example exposure time in seconds
+#                         milliseconds_in_second = 1000) -> float:
+def calculate_K_factor(Activity = 2.94E-03,  # Activity in Bq (N/s)
+                        LMO_MASS = 0.28,  # Mass of LMO in kg
                         second_in_year = 3600 * 24 * 365,  # Number of seconds in a year
                         Probability = 3.41E-04,  # Given probability factor
                         correction_factor = 1,  # Factor for corrections
