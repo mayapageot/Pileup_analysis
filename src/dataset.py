@@ -229,7 +229,7 @@ class CachedBinaryDataset(Dataset):
 
 
 class CachedBinaryDataset_withgenerated(CachedBinaryDataset):
-    def __init__(self, file_path, position_file, win_length, pulse = None,
+    def __init__(self, file_path, position_file, win_length=2048, pulse = None, positions = None,
                  n_windows = 12288, win_shift_start=0, win_shift=0, injection_fraction = 0.5,
                  device = "cpu", dtype = np.uint32):
         """
@@ -245,8 +245,14 @@ class CachedBinaryDataset_withgenerated(CachedBinaryDataset):
                 device (str, optional): Device to store the data (e.g., "cpu" or "cuda"). Defaults to "cpu".
                 dtype (numpy dtype, optional): Data type for reading binary data. Defaults to np.uint32.
         """
-        pos_file = np.loadtxt(position_file, ndmin=2)[:n_windows]
-        positions = (pos_file[:, 0] // 4).astype(int)
+        pos_file = np.loadtxt(position_file, ndmin = 2)[:n_windows]
+        if positions is None:
+            positions = (pos_file[:, 0] // 4).astype(int)
+        else:
+            positions = np.asarray(positions)
+            n_windows = min(n_windows, len(positions))
+            pos_file = pos_file[:n_windows]
+        print(pos_file.shape)
         super().__init__(file_path, win_length, positions,
                          win_shift_start,win_shift, device, dtype)
         time = np.arange(0, self.win_length) - int(injection_fraction * self.win_length)
@@ -272,6 +278,52 @@ class CachedBinaryDataset_withgenerated(CachedBinaryDataset):
             e1 = pos_file[:, 1]
             self.data += e1[:, None] * pulse_inter(time + smearing[:, None])
 
+class CachedBinaryDataset_withdenoise(CachedBinaryDataset):
+    def __init__(self, file_path, position_file, win_length, denoised_data, pulse = None, positions = None,
+                 n_windows = 12288, win_shift_start=0, win_shift=0, injection_fraction = 0.5,
+                 device = "cpu", dtype = np.uint32):
+        """
+            Initializes the CachedBinaryDataset_withgenerated class.
+
+            Args:
+                file_path (str): Path to the binary file to be loaded.
+                position_file (str): Path to the file containing position data.
+                win_length (int): Length of each data window to extract.
+                denoised_data (torch.Tensor): Denoised data to be subtracted from the raw data.
+                pulse (callable or np.ndarray, optional): Pulse function or array for interpolation. Defaults to None.
+                n_windows (int, optional): Number of windows to process. Defaults to 12288.
+                win_shift (int, optional): Shift applied to window start positions. Defaults to 0.
+                device (str, optional): Device to store the data (e.g., "cpu" or "cuda"). Defaults to "cpu".
+                dtype (numpy dtype, optional): Data type for reading binary data. Defaults to np.uint32.
+        """
+        pos_file = np.loadtxt(position_file, ndmin = 2)[:n_windows]
+        if positions is None:
+            positions = (pos_file[:, 0] // 4).astype(int)
+        super().__init__(file_path, win_length, positions,
+                         win_shift_start,win_shift, device, dtype)
+        time = np.arange(0, self.win_length) - int(injection_fraction * self.win_length)
+        if callable(pulse):
+            pulse_inter = pulse
+        elif pulse is not None:
+            len_pulse = len(pulse)
+            pulse_inter = interp1d(
+                np.arange(- len_pulse // 2, len_pulse // 2),
+                pulse, kind = 'quadratic', fill_value = 0., bounds_error = False)
+        else:
+            def pulse_inter(x):
+                return 0 * x
+        if pos_file.shape[1] > 3:
+            smearing = pos_file[:, -2]
+            dt = pos_file[:, -1]
+            e1 = pos_file[:, 1]
+            e2 = pos_file[:, 2]
+            self.data += (e1[:, None] * pulse_inter(time + smearing[:, None]) +
+                          e2[:, None] * pulse_inter(time + smearing[:, None] + dt[:, None]))
+        else:
+            smearing = pos_file[:, -1]
+            e1 = pos_file[:, 1]
+            self.data += e1[:, None] * pulse_inter(time + smearing[:, None])
+        self.data -= denoised_data
 
 def batch_iterator(dataset, batch_size=4096, device="cpu", use_loader=True,
                    shuffle=False, num_workers=4, prefetch_factor=2):
