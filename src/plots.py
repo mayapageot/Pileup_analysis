@@ -1393,6 +1393,74 @@ def NPS_figure():
     fig.set_tight_layout(True)
     fig.savefig("/local/home/mp274748/Documents/these/figures/NPS.pdf", dpi=300)
 
+
+def plot_mu_sigma_M(t_torch, mu_raw, sigma_raw, mu_corr, sigma_corr):
+    from src.analysis import compute_A
+    fig, ax1 = plt.subplots(figsize = (9, 7))
+    ax2 = ax1.twinx()
+    mu_raw = mu_raw.real
+    sigma_raw = sigma_raw.real
+    mu_corr = mu_corr.real
+    sigma_corr = sigma_corr.real
+    t_torch = t_torch.real
+    # --- AXIS 1 (left) ---
+    l1, = ax1.plot(t_torch * 1e3, mu_raw[-1], color = "#0072B2", label = "Raw μ")
+    f1 = ax1.fill_between(
+        t_torch * 1e3,
+        (mu_raw[-1] - sigma_raw[-1]).cpu(),
+        (mu_raw[-1] + sigma_raw[-1]).cpu(),
+        alpha = 0.3, color = "#0072B2", label = "Raw ±σ"
+    )
+
+    l2, = ax1.plot(t_torch * 1e3, mu_corr[-1], color = "#D55E00", label = "Denoised μ")
+    f2 = ax1.fill_between(
+        t_torch * 1e3,
+        (mu_corr[-1] - sigma_corr[-1]).cpu(),
+        (mu_corr[-1] + sigma_corr[-1]).cpu(),
+        alpha = 0.3, color = "#D55E00", label = "Denoised ±σ"
+    )
+
+    ax1.set_xlabel("Δt [s]", fontsize = 14)
+    ax1.set_ylabel("Y", fontsize = 14)
+
+    # --- AXIS 2 (right) ---
+    l3, = ax2.plot(
+        t_torch * 1e3,
+        compute_A(mu_raw, sigma_raw, N_sigma = 1.28)[-1],
+        color = "#0072B2", ls = "--", label = "Raw $\mathcal{M}$"
+    )
+
+    l4, = ax2.plot(
+        t_torch * 1e3,
+        compute_A(mu_corr, sigma_corr, N_sigma = 1.28)[-1],
+        color = "#D55E00", ls = "-.", label = "Denoised $\mathcal{M}$"
+    )
+
+    ax2.set_ylabel(r"$\mathcal{M}$", fontsize = 14)
+    ax2.tick_params(axis = 'both', which = 'major', labelsize = 12)
+    ax1.tick_params(axis = 'both', which = 'major', labelsize = 12)
+    # --- Separate legends ---
+    # --- SHARED LEGEND ---
+    handles = [l1, f1, l2, f2, l3, l4]
+    labels = [h.get_label() for h in handles]
+    ticks2 = [0, 0.2, 0.4, 0.6, 0.8, 1]
+    ticks1 = np.linspace(0.988, 1.0, len(ticks2))
+    ax1.set_yticks(ticks1)
+    ax2.set_yticks(ticks2)
+    ax1.set_ylim(0.986, 1.002)
+    # map limits to ax2
+    t1_min, t1_max = ticks1[0], ticks1[-1]
+    t2_min, t2_max = ticks2[0], ticks2[-1]
+    y1_min, y1_max = ax1.get_ylim()
+    y2_min = t2_min + (y1_min - t1_min) * (t2_max - t2_min) / (t1_max - t1_min)
+    y2_max = t2_min + (y1_max - t1_min) * (t2_max - t2_min) / (t1_max - t1_min)
+
+    ax2.set_ylim(y2_min, y2_max)
+    ax1.grid(linestyle = '--', linewidth = 0.5)
+    ax1.legend(handles, labels, loc = "upper right", fontsize = 12)
+    fig.savefig("/local/home/mp274748/Documents/these/figures/mu_sigma_M_raw_denoise.pdf", dpi = 300)
+
+
 if __name__ == "__main__":
     NPS_figure()
     plt.show()
