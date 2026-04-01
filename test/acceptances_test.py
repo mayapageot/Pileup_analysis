@@ -47,7 +47,16 @@ for channel, StdCut in zip(channels, StdCuts):
     # data_single, data_pileup = ds.create_data_sets_denoise(channel, win_length=2000, shift=0, pos_prefix="_bis")
     nps_bis = np.load(f"{BASE}/outputs/NPS_study/NPS_channel{channel}_win{window_size}_{meas_name}.npy")
     nps_bis *= (8. / 3.)  # Adjust for Hann window effect
-    meanpulse_bis = np.load(f"{BASE}/outputs/meanpulses_build/channel{channel}_meanpulse_raw.npy")
+    mean_pulse = an.build_mean_pulse(data_single, rms_thr=StdCut, batch_size=2048, device=device,
+                                     use_loader=False).cpu().numpy()
+    S, w, H_unit = an.compute_H(mean_pulse, nps_bis, np.hanning)
+    H_unit_torch = torch.tensor(H_unit, dtype=torch.cfloat, device=device)
+    meanpulse_bis = an.build_mean_pulse_filteralignement(data_single, rms_thr=StdCut,
+                                                               H=H_unit_torch, batch_size=2048,
+                                                               pulse_start_pos=-100, pulse_end_pos=4096,
+                                                               device=device, use_loader=False).cpu().numpy()
+    # meanpulse_bis = np.load(f"{BASE}/outputs/meanpulses_build/channel{channel}_meanpulse_mean.npy")
+    np.save(f"{BASE}/outputs/meanpulses_build/channel{channel}_meanpulse_mean.npy", meanpulse_bis)
     signal_amp = ds.get_amp_Q_val(channel)
     S, w, H_unit = an.compute_H(meanpulse_bis, nps_bis, np.hanning)
     # Convert all arrays to torch tensors on GPU
@@ -69,8 +78,6 @@ for channel, StdCut in zip(channels, StdCuts):
     acceptances = [0.7, 0.8, 0.84, 0.87, 0.9, 0.92, 0.93, 0.94, 0.95, 0.96, 0.99]
     for acceptance in acceptances:
         N_sigma = norm.ppf(1 - (1 - acceptance) * 100 / 100)
-
-
         torch.cuda.synchronize()
         t0 = time.time()
         f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
@@ -79,12 +86,12 @@ for channel, StdCut in zip(channels, StdCuts):
         torch.cuda.synchronize()
         t1 = time.time()
         print("Time:", t1 - t0)
-        # f1_opt, f2_opt = np.load(f"../outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance*100):d}_d0.npy")
-        # print(torch.tensor(f1_0,dtype=torch.float).size())
         J = float(J_values[-1])
+        # f1_opt, f2_opt = np.load(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance*100):d}_good_mp_no_interp.npy")
+        # print(torch.tensor(f1_0,dtype=torch.float).size())
         # save_filter_function
         #np.save(f"{BASE}/outputs/training_Js/channel_{channel}/J_{int(acceptance * 100):d}_base_true_mp_2048", np.array(J_values))
-        np.save(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance * 100):d}_good_mp_no_interp",
+        np.save(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance * 100):d}.npy",
                 np.array([f1_opt, f2_opt]))
         f1_t = torch.tensor(f1_opt, dtype=torch.float32, device=device)
         f2_t = torch.tensor(f2_opt, dtype=torch.float32, device=device)
@@ -94,6 +101,9 @@ for channel, StdCut in zip(channels, StdCuts):
         f1_t /= torch.mean(f1_t * S_H).real
         f2_t /= torch.mean(f2_t * S_H).real
 
+        # J = an.compute_J(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
+        #                  N_sigma=N_sigma, full_output=False, use_interp=True)
+        # J = float(J)
 
         # Compute PSD and BI
         BI, rp, sigma_rp, sigma_BI = an.compute_BI_torch(
@@ -118,13 +128,12 @@ for channel, StdCut in zip(channels, StdCuts):
         print("max memory: ",torch.cuda.max_memory_allocated() / 1024**2)
         print(f"Channel {channel}, Acceptance {acceptance}: J={J}, 1-rp={1 - rp}, BI={BI}")
 
-        # pd.DataFrame({"channel": channel_list, "BI": BIs, "BI_uncertainty": BI_uncertainties}).to_csv('../outputs/BI_results_base.csv', index=False)
 
         data = np.column_stack([channel_list,acceptance_list, BIs, BI_uncertainties,J_list])
         header = "channel,acceptance,BI,BI_uncertainty,J"
 
         np.savetxt(
-            f"{BASE}/outputs/BI_acceptance_study_good_mp_no_interp.csv",
+            f"{BASE}/outputs/BI_acceptance_study.csv",
             data,
             delimiter = ",",
             header = header,
