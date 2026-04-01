@@ -75,7 +75,7 @@ for channel, StdCut in zip(channels, StdCuts):
         t0 = time.time()
         f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
                                                        signal_amp_torch, ratio_distribution_torch, N_sigma=N_sigma,
-                                                       n_trials=1000, verbose=False, use_interp=True)
+                                                       n_trials=1000, verbose=False, use_interp=False)
         torch.cuda.synchronize()
         t1 = time.time()
         print("Time:", t1 - t0)
@@ -84,7 +84,7 @@ for channel, StdCut in zip(channels, StdCuts):
         J = float(J_values[-1])
         # save_filter_function
         #np.save(f"{BASE}/outputs/training_Js/channel_{channel}/J_{int(acceptance * 100):d}_base_true_mp_2048", np.array(J_values))
-        np.save(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance * 100):d}_good_mp",
+        np.save(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance * 100):d}_good_mp_no_interp",
                 np.array([f1_opt, f2_opt]))
         f1_t = torch.tensor(f1_opt, dtype=torch.float32, device=device)
         f2_t = torch.tensor(f2_opt, dtype=torch.float32, device=device)
@@ -124,7 +124,7 @@ for channel, StdCut in zip(channels, StdCuts):
         header = "channel,acceptance,BI,BI_uncertainty,J"
 
         np.savetxt(
-            f"{BASE}/outputs/BI_acceptance_study_good_mp.csv",
+            f"{BASE}/outputs/BI_acceptance_study_good_mp_no_interp.csv",
             data,
             delimiter = ",",
             header = header,
