@@ -197,3 +197,8 @@ def asymmetric_hann(N, p):
     w[right] = 0.5 * (1 + np.cos(np.pi * (n[right] - n_p) / ((N - 1) - n_p)))
 
     return w
+
+def compute_rt_bin(arr,sampling_f):
+    arg_max = np.argmax(arr)
+    btm, top = np.interp([0.1,0.9],arr[:arg_max],np.arange(len(arr[:arg_max])))
+    return (top-btm)/sampling_f

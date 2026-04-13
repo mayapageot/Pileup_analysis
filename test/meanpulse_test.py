@@ -183,7 +183,6 @@ for channel, StdCut in zip(channels, StdCuts):
         f1_t /= torch.mean(f1_t * S_H).real
         f2_t /= torch.mean(f2_t * S_H).real
 
-        S_H_delayed, S_H, S2_over_nps = an.precompute_constants(S_torch, H_unit_torch, w_torch, t_torch, nps_torch)
         J = an.compute_J(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
                          N_sigma = N_sigma, full_output = False, use_interp = True)
         BI, rp, sigma_rp, sigma_BI = an.compute_BI_torch(

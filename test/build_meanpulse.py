@@ -17,28 +17,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 StdCuts = [0.0003, 0.0004, 0.0008, 0.0006, 0.0012, 0.0007, 0.00035, 0.0025]
 channels = [3, 5, 9, 11, 13, 15, 17, 19]
-fp_model = lambda *params: sim.filtered_pulse_model(*params, fc = 2500, order = 6)
-
-BIs = []
-BI_uncertainties = []
-rps = []
-rp_uncertainties = []
-Js = []
-channel_data = []
-risetimes = []
-polemultipliers = []
-amp_gains = []
-meanpulse_type_list = []
-single_pulse_indexes =  [[126, 47, 77],
-                         [394, 390, 240],
-                         [33, 334, 322],
-                         [71, 312, 199],
-                         [101, 233, 71],
-                         [253, 52, 147],
-                         [238, 103, 6],
-                         [295, 67, 199]]
-
-fit_parameters = np.loadtxt(f"{BASE}/outputs/fits/pulse_fit_params.csv", delimiter = ',', skiprows = 1)
 
 for channel, StdCut in zip(channels, StdCuts):
     window_size = 4096

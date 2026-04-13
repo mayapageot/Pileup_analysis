@@ -247,12 +247,13 @@ def plot_Trial_vs_J():
         "#D55E00",  # vermillion
         "#CC79A7"  # reddish purple
     ]
-
-    for i, channel in enumerate(channels):
-        J_values = np.load(f"../outputs/training_Js/channel_{channel}/J_90_base_true_mp.npy")
+    channel_IDs = [5, 9, 11, 10, 4, 2, 12, 3]
+    for i, idx in enumerate(np.argsort(channel_IDs)):
+        channel = channels[idx]
+        J_values = np.load(f"../outputs/training_Js/channel_{channel}/J_90_base.npy")
         all_J.append(J_values)
         ax.plot(J_values*100, color=colors[i], alpha=0.7)
-        ax.plot([], [], color=colors[i], label=f"Detector {channel}",marker="s", markersize=10, linestyle="")
+        ax.plot([], [], color=colors[i], label=f"Detector {channel_IDs[idx]}",marker="s", markersize=10, linestyle="")
 
     mean_J = np.mean(all_J, axis=0)
     ax.plot(mean_J*100, color="black", lw=2.5)
@@ -834,7 +835,7 @@ def pulse_template():
 
     # Legend
     plt.plot([], [], marker = "X", ls = "", ms = 12, color = "#D55E00",
-             label = "single high energy pulses\nused in [46]")
+             label = "single high energy pulses\nused in [47]")
     plt.plot([], [], marker="P", ls="", ms=12, color="#0072B2",
              label="single high energy pulses\nselected at different amplitudes")
     plt.plot([], [], marker="D", ls="", ms=12, color="#E69F00",
@@ -1462,5 +1463,5 @@ def plot_mu_sigma_M(t_torch, mu_raw, sigma_raw, mu_corr, sigma_corr):
 
 
 if __name__ == "__main__":
-    NPS_figure()
+    pulse_template()
     plt.show()
