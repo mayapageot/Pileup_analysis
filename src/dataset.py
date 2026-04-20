@@ -231,6 +231,7 @@ class CachedBinaryDataset(Dataset):
 class CachedBinaryDataset_withgenerated(CachedBinaryDataset):
     def __init__(self, file_path, position_file, win_length=2048, pulse = None, positions = None,
                  n_windows = 12288, win_shift_start=0, win_shift=0, injection_fraction = 0.5,
+                 scaling_factor = 1.,
                  device = "cpu", dtype = np.uint32):
         """
             Initializes the CachedBinaryDataset_withgenerated class.
@@ -271,12 +272,12 @@ class CachedBinaryDataset_withgenerated(CachedBinaryDataset):
             dt = pos_file[:, -1]
             e1 = pos_file[:, 1]
             e2 = pos_file[:, 2]
-            self.data += (e1[:, None] * pulse_inter(time + smearing[:, None]) +
+            self.data += scaling_factor*(e1[:, None] * pulse_inter(time + smearing[:, None]) +
                           e2[:, None] * pulse_inter(time + smearing[:, None] + dt[:, None]))
         else:
             smearing = pos_file[:, -1]
             e1 = pos_file[:, 1]
-            self.data += e1[:, None] * pulse_inter(time + smearing[:, None])
+            self.data += scaling_factor * e1[:, None] * pulse_inter(time + smearing[:, None])
 
 class CachedBinaryDataset_withdenoise(CachedBinaryDataset):
     def __init__(self, file_path, position_file, win_length, denoised_data, pulse = None, positions = None,
