@@ -56,8 +56,27 @@ def precompute_constants(S, H_unit, w, t, nps):
     S_H_delayed = S_H[None, :] * exp_term
     return S_H_delayed, S_H, S2_over_nps
 
+def compute_sigma_OF(S, nps):
+    """
+    Computes the optimal filter standard deviation (sigma) based on the given filter and noise power spectrum.
 
-def compute_vars(S2_over_nps, f1, f2,df):
+    Args:
+        H (torch.Tensor): Filter tensor.
+        nps (torch.Tensor): Noise power spectrum tensor.
+
+    Returns:
+        torch.Tensor: The computed optimal filter standard deviation (sigma).
+    """
+    S = torch.tensor(S, dtype=torch.cfloat)
+    nps = torch.tensor(nps, dtype=torch.cfloat)
+    absS2_over_nps = (S.abs() ** 2) / nps
+    num = torch.sum(absS2_over_nps)
+    R = torch.sum(absS2_over_nps)
+    var1 = num / (R.abs() ** 2)
+    sigma_OF = var1.real**0.5
+    return sigma_OF
+
+def compute_vars(S2_over_nps, f1, f2):
     """
     Computes the standard deviation (sigma) for the given inputs.
 
@@ -78,8 +97,8 @@ def compute_vars(S2_over_nps, f1, f2,df):
     cross = torch.sum((f1 * torch.conj(f2)) * absS2_over_nps)
     R1 = torch.sum(abs_f1 * absS2_over_nps)
     R2 = torch.sum(abs_f2 * absS2_over_nps)
-    var1 = num1 / (R1.abs() ** 2)*df
-    var2 = num2 / (R2.abs() ** 2)*df
+    var1 = num1 / (R1.abs() ** 2)
+    var2 = num2 / (R2.abs() ** 2)
     cov12 = cross / (R1 * torch.conj(R2))
     return var1.real, var2.real, cov12.real
 
@@ -143,7 +162,7 @@ def compute_sigma_ratio_order4(mu1, mu2, var1, var2, cov12):
     return var_R**0.5
 
 
-def compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, df, pulse_center_ratio=0.5,
+def compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, pulse_center_ratio=0.5,
                      return_all=False, order=2, use_interp=False,
                      jitter_max=20, interpolation_range=5):
     """
@@ -217,7 +236,7 @@ def compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, df, p
         mu1 = s_pileup_1.real.max(dim = -1).values
         mu2 = s_pileup_2.real.max(dim = -1).values
     muY = mu1 / mu2
-    var1, var2, cov12 = compute_vars(S2_over_nps, f1, f2, df)
+    var1, var2, cov12 = compute_vars(S2_over_nps, f1, f2)
     if order == 4:
         sigmaY = compute_sigma_ratio_order4(mu1*signal_amp, mu2*signal_amp, var1**0.5, var2**0.5, cov12)
     else:
@@ -243,7 +262,7 @@ def compute_A(muY, sigmaY, N_sigma=1.28):
     return 1 - norm.cdf((1-muY-N_sigma*sigmaY[0, 0]) / sigmaY)
 
 
-def compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distribution, df,
+def compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distribution,
               pulse_center_ratio=0.5, N_sigma=1.28, use_interp=False ,full_output=False):
     """
     Computes the J metric for the given inputs.
@@ -269,7 +288,7 @@ def compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distri
                 - torch.Tensor: Mean Y values.
                 - torch.Tensor: Sigma Y values.
     """
-    muY, sigmaY = compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, df,
+    muY, sigmaY = compute_mu_sigma(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp,
                                    pulse_center_ratio=pulse_center_ratio, use_interp=use_interp)
     A = compute_A(muY, sigmaY, N_sigma=N_sigma)
     if full_output:
@@ -278,6 +297,7 @@ def compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distri
 
 
 def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_sigma = 1.28, n_trials = 1000,
+                    activation_fct=None,
                      pulse_center_ratio=0.5, f1_init=None, f2_init=None, verbose = True, use_interp = False):
     """
     Optimizes two filters (f1 and f2) to maximize the J metric using gradient-based optimization.
@@ -308,7 +328,7 @@ def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_
     S_H_delayed, S_H, S2_over_nps = precompute_constants(S, H_unit, w, t, nps)
     # Initialize filter parameters as complex tensors
     n = len(H_unit)
-    activation_fct = torch.nn.Softplus(20,20)  # To ensure positivity of the filters
+    activation_fct = torch.nn.Softplus(20,20) if activation_fct is None else activation_fct
     f1_init = activation_fct(torch.rand(n//2+1, dtype = torch.float)) if f1_init is None else f1_init.clone().abs()
     f2_init = activation_fct(torch.rand(n//2+1, dtype = torch.float)) if f2_init is None else f2_init.clone().abs()
     if len(f1_init) > n//2+1:
@@ -320,13 +340,17 @@ def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_
 
     # Set up the optimizer
     optimizer = torch.optim.Adam([f1_param, f2_param], lr = 1e-2)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max = n_trials,
+        eta_min = 1e-5
+    )
     J_values = []  # To store J metric values during optimization
     f1 = activation_fct(f1_param)
     f2 = activation_fct(f2_param)
     f1 = torch.cat([f1, f1[1:-1].flip(0)])
     f2 = torch.cat([f2, f2[1:-1].flip(0)])
     J = torch.nan
-    df = (w[1] - w[0])/(2*np.pi)
     for step in range(n_trials):
         optimizer.zero_grad()  # Reset gradients
         # Enforce positivity of the filters
@@ -340,21 +364,22 @@ def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_
         f1 = f1 / norm1
         f2 = f2 / norm2
         # Compute the J metric
-        J = compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distribution,df , N_sigma = N_sigma,
+        J = compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distribution, N_sigma = N_sigma,
                       pulse_center_ratio=pulse_center_ratio, use_interp=use_interp)
         J_values.append(J.item())  # Store the current J value
 
         # Backpropagation and update filter parameters
         J.backward()
-        optimizer.step()
 
+        optimizer.step()
+        scheduler.step()
         # Uncomment the following lines to print progress every 100 steps
         if step % 10 == 0 and verbose:
             print(f"Step {step}: J = {J.item():.6f}")
     print(f"Final: J = {J.item():.6f}")
     # Convert optimized filters to numpy arrays
-    f1 = activation_fct(f1).detach()
-    f2 = activation_fct(f2).detach()
+    f1 = f1.detach()
+    f2 = f2.detach()
     return f1, f2, J_values
 
 

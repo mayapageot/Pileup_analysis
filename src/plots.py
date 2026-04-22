@@ -835,7 +835,7 @@ def pulse_template():
 
     # Legend
     plt.plot([], [], marker = "X", ls = "", ms = 12, color = "#D55E00",
-             label = "single high energy pulses\nused in [47]")
+             label = "single high energy pulses\nused in [49]")
     plt.plot([], [], marker="P", ls="", ms=12, color="#0072B2",
              label="single high energy pulses\nselected at different amplitudes")
     plt.plot([], [], marker="D", ls="", ms=12, color="#E69F00",
