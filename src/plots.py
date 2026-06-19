@@ -1105,7 +1105,7 @@ def WP_test():
         lw=1,
         markersize=10,
         color=color_ch1,
-        label=f"Detector ID {channel}"
+        label=f"Detector ID {channel_ID[channels.index(channel)]}"
     )
 
     # Channel 5 (right axis)
@@ -1120,7 +1120,7 @@ def WP_test():
         lw=1,
         markersize=10,
         color=color_ch2,
-        label=f"Detector ID {channel}"
+        label=f"Detector ID {channel_ID[channels.index(channel)]}"
     )
 
     # Labels
@@ -1204,6 +1204,35 @@ def bb_spectrum():
     fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/bb_spectrum.pdf", dpi = 300)
     plt.show()
 
+
+def bb_spectrum_with_Q_value_peak():
+    from utility.double_beta_spectrum import g
+    fig, ax = plt.subplots(figsize = (8, 6))
+    E = np.linspace(0, 3.100, 1000)
+    spectrum = g(E)
+    ax.plot(E, spectrum, color = 'blue')
+    ax.fill_between(E, np.zeros_like(E), spectrum, color = 'blue', alpha = 0.2, label = '2νββ spectrum')
+    def gaussian(x, mu, sigma):
+        return np.exp(-0.5 * ((x - mu) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
+
+    E_peak = np.linspace(3.0, 3.100, 1000)
+    peak = gaussian(E_peak, 3.034, 0.01) * np.max(spectrum) * 0.01
+    ax.plot(E_peak, peak, color = 'red')
+    ax.fill_between(E_peak, np.zeros_like(E_peak), peak, color = 'red', alpha = 0.2,label='0νββ')
+    ax.set_xticks([3.034], labels = [r'$Q_{\beta\beta}$'], fontsize = 20)
+    ax.set_yticks([])
+    ax.set_xlabel('Energy', fontsize = 20)
+    ax.set_ylabel('Events', fontsize = 20)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    plt.xticks(fontsize = 20)
+    plt.yticks(fontsize = 20)
+    ax.set_xlim(0, 3.1)
+    ax.set_ylim(0,  np.max(spectrum))
+    fig.legend(fontsize = 16)
+    fig.set_tight_layout(True)
+    fig.savefig("/local/home/mp274748/Documents/these/figures/bb_spectrum_with_Q_value_peak.pdf", dpi = 300)
+    plt.show()
 def denoise_NPS_comparaison():
     channel_list = [3, 5, 9, 11, 13, 15, 17, 19]
     channel_ID = [5, 9, 11, 10, 4, 2, 12, 3]
@@ -1463,5 +1492,5 @@ def plot_mu_sigma_M(t_torch, mu_raw, sigma_raw, mu_corr, sigma_corr):
 
 
 if __name__ == "__main__":
-    pulse_template()
+    bb_spectrum_with_Q_value_peak()
     plt.show()
