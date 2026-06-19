@@ -1,19 +1,20 @@
-import matplotlib.pyplot as plt
-%load_ext autoreload
-%autoreload 1
-%aimport utility.functions
-%aimport src.analysis
-%aimport src.dataset
-%aimport src.plots
-%aimport src.simulation
+import sys
+from pathlib import Path
+# Add src to Python path dynamically
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+import time
 import numpy as np
 import src.analysis as an
 import src.dataset as ds
-import torch
-from scipy.stats import norm
+import src.simulation as sim
 from utility.double_beta_spectrum import pdf_ratio2b
-import utility.functions as fn
-BASE = "../"
+import torch
+from torch.utils.data import DataLoader
+from scipy.interpolate import interp1d
+from scipy.stats import norm
+import os
+# Ensure we have GPU available
+BASE = Path(__file__).resolve().parent.parent
 channels = [3, 5, 9, 11, 13, 15, 17, 19]
 channel_ID = [5, 9, 11, 10, 4, 2, 12, 3]
 StdCuts = [0.0003, 0.0004, 0.0008, 0.0006, 0.0012, 0.0007, 0.00035, 0.0025]
@@ -29,7 +30,7 @@ ratio_distribution = pdf_ratio2b(np.linspace(r_min, r_max, N_r))
 ratio_distribution /= np.mean(ratio_distribution)
 
 window_size = 4096 #size of the window used for the analysis, should be the same as the one used for the NPS computation
-n_trials=200 #number of trials for the optimization of the filters
+n_trials =1000 #number of trials for the optimization of the filters
 
 
 sampling_rate = 10000
@@ -64,7 +65,7 @@ for channel in channels:
                                                    signal_amp_torch, ratio_distribution_torch, N_sigma=N_sigma,
                                                    activation_fct = torch.abs,
                                                    f1_init = None, f2_init = None,
-                                                   n_trials=300, use_interp = True, verbose=True)
+                                                   n_trials=n_trials, use_interp = True, verbose=False)
         J = float(J_values[-1])
         f1_opt,f2_opt = f1_t.cpu().numpy(), f2_t.cpu().numpy()
         np.save(f"{BASE}/outputs/training_Js/channel_{channel}/J_{int(acceptance * 100):d}_scaling_{scaling_factor:.1f}", np.array(J_values))
@@ -106,7 +107,7 @@ for channel in channels:
         channel_data.append(channel)
         scaling_factors.append(scaling_factor)
 
-        data = np.column_stack([np.array(channel_data), np.append(scaling_factors), np.array(BIs),
+        data = np.column_stack([np.array(channel_data), np.array(scaling_factors), np.array(BIs),
                                 np.array(BI_uncertainties), np.array(Js)])
 
         header = "channel,scaling_factor,BI,BI_uncertainty,J"
