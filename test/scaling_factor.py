@@ -57,7 +57,7 @@ for channel in channels:
     t_torch = torch.linspace(t_min, t_max, N_t, dtype=torch.cfloat, device=device)
     r_torch = torch.linspace(r_min, r_max, N_r, dtype=torch.cfloat, device=device)
     ratio_distribution_torch = torch.tensor(ratio_distribution, dtype=torch.cfloat, device=device)
-    for scaling_factor in [0.8, 0.9, 1., 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]:
+    for scaling_factor in [0.6 ,0.7]:
         signal_amp = ds.get_amp_Q_val(channel)*scaling_factor #expected amplitude of the signal at the Q-value
         signal_amp_torch = torch.tensor(signal_amp, dtype=torch.float32, device=device)
 
@@ -113,10 +113,10 @@ for channel in channels:
         header = "channel,scaling_factor,BI,BI_uncertainty,J"
 
         np.savetxt(
-            f"{BASE}/outputs/Systematics/BI_scaling_factor.csv",
+            f"{BASE}/outputs/Systematics/BI_scaling_factor_bis.csv",
             data,
             delimiter = ",",
             header = header,
             comments = ""
         )
-        print("Results saved to outputs/Systematics/BI_scaling_factor.csv")
+        print("Results saved to outputs/Systematics/BI_scaling_factor_bis.csv")
