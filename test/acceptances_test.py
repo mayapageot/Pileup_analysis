@@ -19,7 +19,7 @@ print(device)
 BIs = []
 BI_uncertainties = []
 channel_list = []
-J_list = []
+M_list = []
 acceptance_list = []
 channels = [3, 5, 9, 11, 13, 15, 17, 19]
 channel_ID = [5, 9, 11, 10, 4, 2, 12, 3]
@@ -80,17 +80,17 @@ for channel, StdCut in zip(channels, StdCuts):
         N_sigma = norm.ppf(1 - (1 - acceptance) * 100 / 100)
         torch.cuda.synchronize()
         t0 = time.time()
-        f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
+        f1_opt, f2_opt, M_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
                                                        signal_amp_torch, ratio_distribution_torch, N_sigma=N_sigma,
                                                        n_trials=1000, verbose=False, use_interp=False)
         torch.cuda.synchronize()
         t1 = time.time()
         print("Time:", t1 - t0)
-        J = float(J_values[-1])
+        M = float(M_values[-1])
         # f1_opt, f2_opt = np.load(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance*100):d}_good_mp_no_interp.npy")
         # print(torch.tensor(f1_0,dtype=torch.float).size())
         # save_filter_function
-        #np.save(f"{BASE}/outputs/training_Js/channel_{channel}/J_{int(acceptance * 100):d}_base_true_mp_2048", np.array(J_values))
+        #np.save(f"{BASE}/outputs/training_Ms/channel_{channel}/M_{int(acceptance * 100):d}_base_true_mp_2048", np.array(M_values))
         np.save(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance * 100):d}.npy",
                 np.array([f1_opt, f2_opt]))
         f1_t = torch.tensor(f1_opt, dtype=torch.float32, device=device)
@@ -101,9 +101,9 @@ for channel, StdCut in zip(channels, StdCuts):
         f1_t /= torch.mean(f1_t * S_H).real
         f2_t /= torch.mean(f2_t * S_H).real
 
-        # J = an.compute_J(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
+        # M = an.compute_M(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
         #                  N_sigma=N_sigma, full_output=False, use_interp=True)
-        # J = float(J)
+        # M = float(M)
 
         # Compute PSD and BI
         BI, rp, sigma_rp, sigma_BI = an.compute_BI_torch(
@@ -122,15 +122,15 @@ for channel, StdCut in zip(channels, StdCuts):
         BIs.append(float(BI))
         BI_uncertainties.append(float(sigma_BI))
         channel_list.append(channel)
-        J_list.append(J)
+        M_list.append(M)
         acceptance_list.append(acceptance)
 
         print("max memory: ",torch.cuda.max_memory_allocated() / 1024**2)
-        print(f"Channel {channel}, Acceptance {acceptance}: J={J}, 1-rp={1 - rp}, BI={BI}")
+        print(f"Channel {channel}, Acceptance {acceptance}: M={M}, 1-rp={1 - rp}, BI={BI}")
 
 
-        data = np.column_stack([channel_list,acceptance_list, BIs, BI_uncertainties,J_list])
-        header = "channel,acceptance,BI,BI_uncertainty,J"
+        data = np.column_stack([channel_list,acceptance_list, BIs, BI_uncertainties,M_list])
+        header = "channel,acceptance,BI,BI_uncertainty,M"
 
         np.savetxt(
             f"{BASE}/outputs/BI_acceptance_study.csv",

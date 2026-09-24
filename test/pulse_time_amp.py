@@ -23,7 +23,7 @@ BIs = []
 BI_uncertainties = []
 rps = []
 rp_uncertainties = []
-Js = []
+Ms = []
 channel_data = []
 risetimes = []
 polemultipliers = []
@@ -96,7 +96,7 @@ for channel, StdCut in zip(channels, StdCuts):
                     f"channel{channel}_functions_eff{int(acceptance * 100):d}_meanpulse_test_{meanpulse_type}.npy"
                 )
             else :
-                f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
+                f1_opt, f2_opt, M_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
                                                                signal_amp_torch, ratio_distribution_torch, N_sigma = N_sigma,
                                                                n_trials = 500, verbose = False)
 
@@ -105,8 +105,8 @@ for channel, StdCut in zip(channels, StdCuts):
                         f"channel{channel}_functions_eff{int(acceptance * 100):d}_pulsetimeamp_test_{i}_{int(amp_gain*10):d}",
                         np.array([f1_opt, f2_opt]))
                 np.save(directory_path +
-                        f"channel{channel}_J_{int(acceptance * 100):d}_pulsetimeamp_test_{i}_{int(amp_gain*10):d}",
-                        np.array(J_values))
+                        f"channel{channel}_M_{int(acceptance * 100):d}_pulsetimeamp_test_{i}_{int(amp_gain*10):d}",
+                        np.array(M_values))
 
             f1_t = torch.tensor(f1_opt, dtype = torch.float32, device = device)
             f2_t = torch.tensor(f2_opt, dtype = torch.float32, device = device)
@@ -117,35 +117,35 @@ for channel, StdCut in zip(channels, StdCuts):
             f2_t /= torch.mean(f2_t * S_H).real
 
             S_H_delayed, S_H, S2_over_nps = an.precompute_constants(S_torch, H_unit_torch, w_torch, t_torch, nps_torch)
-            J = an.compute_J(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
+            M = an.compute_M(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
                              N_sigma = N_sigma, full_output = False, use_interp = True)
 
-            Js.append(float(J))
+            Ms.append(float(M))
             channel_data.append(channel)
             risetimes.append(risetime)
             amp_gains.append(amp_gain)
             polemultipliers.append( (1 + i * 0.05) )
 
-            Js_np = np.array(Js)
+            Ms_np = np.array(Ms)
             channel_data_np = np.array(channel_data)
             polemultipliers_np = np.array(polemultipliers)
             risetimes_np = np.array(risetimes)
             amp_gains_np = np.array(amp_gains)
 
             # Create a structured array
-            data = np.zeros(Js_np.shape[0], dtype=[
+            data = np.zeros(Ms_np.shape[0], dtype=[
                 ('channel', 'U32'),
                 ('polemultiplier', float),
                 ('risetime', float),
                 ("amp_gain", float),
-                ('J', float)
+                ('M', float)
             ])
 
             data['channel'] = channel_data_np
             data['polemultiplier'] = polemultipliers_np
             data['risetime'] = risetimes_np
             data['amp_gain'] = amp_gains_np
-            data['J'] = Js_np
+            data['M'] = Ms_np
 
             header = "channel,polemultipliers,risetime,amp_gain"
 

@@ -37,7 +37,7 @@ sampling_rate = 10000
 BIs = []
 BI_uncertainties = []
 scaling_factors = []
-Js = []
+Ms = []
 channel_data = []
 for channel in channels:
     #load the meanpulse
@@ -61,14 +61,14 @@ for channel in channels:
         signal_amp = ds.get_amp_Q_val(channel)*scaling_factor #expected amplitude of the signal at the Q-value
         signal_amp_torch = torch.tensor(signal_amp, dtype=torch.float32, device=device)
 
-        f1_t, f2_t, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
+        f1_t, f2_t, M_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
                                                    signal_amp_torch, ratio_distribution_torch, N_sigma=N_sigma,
                                                    activation_fct = torch.abs,
                                                    f1_init = None, f2_init = None,
                                                    n_trials=n_trials, use_interp = True, verbose=False)
-        J = float(J_values[-1])
+        M = float(M_values[-1])
         f1_opt,f2_opt = f1_t.cpu().numpy(), f2_t.cpu().numpy()
-        np.save(f"{BASE}/outputs/training_Js/channel_{channel}/J_{int(acceptance * 100):d}_scaling_{scaling_factor:.1f}", np.array(J_values))
+        np.save(f"{BASE}/outputs/training_Ms/channel_{channel}/M_{int(acceptance * 100):d}_scaling_{scaling_factor:.1f}", np.array(M_values))
         np.save(f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/functions_eff{int(acceptance * 100):d}",np.array([f1_opt, f2_opt]))
 
         #load the pulse to be injected
@@ -103,14 +103,14 @@ for channel in channels:
         )
         BIs.append(float(BI))
         BI_uncertainties.append(float(sigma_BI))
-        Js.append(J)
+        Ms.append(M)
         channel_data.append(channel)
         scaling_factors.append(scaling_factor)
 
         data = np.column_stack([np.array(channel_data), np.array(scaling_factors), np.array(BIs),
-                                np.array(BI_uncertainties), np.array(Js)])
+                                np.array(BI_uncertainties), np.array(Ms)])
 
-        header = "channel,scaling_factor,BI,BI_uncertainty,J"
+        header = "channel,scaling_factor,BI,BI_uncertainty,M"
 
         np.savetxt(
             f"{BASE}/outputs/Systematics/BI_scaling_factor_bis.csv",

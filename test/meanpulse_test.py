@@ -23,7 +23,7 @@ BIs = []
 BI_uncertainties = []
 rps = []
 rp_uncertainties = []
-Js = []
+Ms = []
 channel_data = []
 risetimes = []
 polemultipliers = []
@@ -160,7 +160,7 @@ for channel, StdCut in zip(channels, StdCuts):
         r_torch = torch.linspace(r_min, r_max, N_r, dtype = torch.cfloat, device = device)
         ratio_distribution_torch = torch.tensor(ratio_distribution, dtype = torch.cfloat, device = device)
 
-        f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
+        f1_opt, f2_opt, M_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
                                                        signal_amp_torch, ratio_distribution_torch, N_sigma = N_sigma,
                                                        n_trials = 500, verbose = False)
         directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/meanpulse_test/"
@@ -169,8 +169,8 @@ for channel, StdCut in zip(channels, StdCuts):
                 f"channel{channel}_functions_eff{int(acceptance * 100):d}_meanpulses_test_2_{meanpulse_type}",
                 np.array([f1_opt, f2_opt]))
         np.save(directory_path +
-                f"channel{channel}_J_{int(acceptance * 100):d}_meanpulses_test_2_{meanpulse_type}",
-                np.array(J_values))
+                f"channel{channel}_M_{int(acceptance * 100):d}_meanpulses_test_2_{meanpulse_type}",
+                np.array(M_values))
         # f1_opt, f2_opt = np.load(
         #     f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/meanpulse_test/" +
         #     f"channel{channel}_functions_eff{int(acceptance * 100):d}_meanpulse_test_{meanpulse_type}.npy"
@@ -183,7 +183,7 @@ for channel, StdCut in zip(channels, StdCuts):
         f1_t /= torch.mean(f1_t * S_H).real
         f2_t /= torch.mean(f2_t * S_H).real
 
-        J = an.compute_J(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
+        M = an.compute_M(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
                          N_sigma = N_sigma, full_output = False, use_interp = True)
         BI, rp, sigma_rp, sigma_BI = an.compute_BI_torch(
             data_pileup,
@@ -198,12 +198,12 @@ for channel, StdCut in zip(channels, StdCuts):
             batch_size = 2048 * 2,
             use_loader = False
         )
-        print(f"Channel {channel}, window size {window_size}, J: {J:.4e}, 1-rp: {1 - rp:.4f}, BI: {BI:.4e}")
+        print(f"Channel {channel}, window size {window_size}, M: {M:.4e}, 1-rp: {1 - rp:.4f}, BI: {BI:.4e}")
         BIs.append(float(BI))
         BI_uncertainties.append(float(sigma_BI))
         rps.append(float(rp))
         rp_uncertainties.append(float(sigma_rp))
-        Js.append(float(J))
+        Ms.append(float(M))
         channel_data.append(channel)
         # polemultipliers.append(poles_bis[0] / poles[0])
         # risetimes.append(risetime)
@@ -213,7 +213,7 @@ for channel, StdCut in zip(channels, StdCuts):
         BI_uncertainties_np = np.array(BI_uncertainties)
         rps_np = np.array(rps)
         rp_uncertainties_np = np.array(rp_uncertainties)
-        Js_np = np.array(Js)
+        Ms_np = np.array(Ms)
         channel_data_np = np.array(channel_data)
         polemultipliers_np = np.array(polemultipliers)
         risetimes_np = np.array(risetimes)
@@ -228,7 +228,7 @@ for channel, StdCut in zip(channels, StdCuts):
             ('BI_uncertainty', float),
             ('1-rp', float),
             ('rp_uncertainty', float),
-            ('J', float)
+            ('M', float)
         ])
 
         data['channel'] = channel_data_np
@@ -237,9 +237,9 @@ for channel, StdCut in zip(channels, StdCuts):
         data['BI_uncertainty'] = BI_uncertainties_np
         data['1-rp'] = 1 - rps_np
         data['rp_uncertainty'] = rp_uncertainties_np
-        data['J'] = Js_np
+        data['M'] = Ms_np
 
-        header = "channel,meanpulse_type,BI,BI_uncertainty,1-rp,rp_uncertainty,J"
+        header = "channel,meanpulse_type,BI,BI_uncertainty,1-rp,rp_uncertainty,M"
 
         np.savetxt(
             f"{BASE}/outputs/Systematics/BI_meanpulses_test_3.csv",

@@ -20,7 +20,7 @@ fp_model = lambda *params: sim.filtered_pulse_model(*params, fc = 2500, order = 
 global_std = [0.00021900556748732924, 0.00028078060131520033, 0.00047128828009590507,
               0.0003684174735099077, 0.0005077228997834027, 0.0004087088746018708,
               0.0002996263501700014, 0.0011633249232545495]
-Js = []
+Ms = []
 channel_data = []
 
 fit_parameters = np.loadtxt(f"{BASE}/outputs/fits/pulse_fit_params.csv", delimiter = ',', skiprows = 1)
@@ -91,15 +91,15 @@ for channel, StdCut in zip(channels, StdCuts):
     directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/denoise_test/"
     os.makedirs(directory_path, exist_ok = True)
 
-    # f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
+    # f1_opt, f2_opt, M_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
     #                                                signal_amp_torch, ratio_distribution_torch, N_sigma = N_sigma,
     #                                                n_trials = 1000, verbose = False, use_interp = True)
     # np.save(directory_path +
     #         f"channel{channel}_functions_eff{int(acceptance * 100):d}_denoise_test",
     #         np.array([f1_opt, f2_opt]))
     # np.save(directory_path +
-    #         f"channel{channel}_J_{int(acceptance * 100):d}_denoise_test",
-    #         np.array(J_values))
+    #         f"channel{channel}_M_{int(acceptance * 100):d}_denoise_test",
+    #         np.array(M_values))
     f1_opt, f2_opt = np.load(directory_path + f"channel{channel}_functions_eff{int(acceptance * 100):d}_denoise_test.npy")
     f1_t = torch.tensor(f1_opt, dtype = torch.float32, device = device)
     f2_t = torch.tensor(f2_opt, dtype = torch.float32, device = device)
@@ -110,13 +110,13 @@ for channel, StdCut in zip(channels, StdCuts):
     f2_t /= torch.mean(f2_t * S_H).real
 
     # S_H_delayed, S_H, S2_over_nps = an.precompute_constants(S_torch, H_unit_torch, w_torch, t_torch, nps_torch)
-    # J = an.compute_J(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
+    # M = an.compute_M(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
     #                  N_sigma = N_sigma, full_output = False, use_interp = True)
-    # Js.append(J.item())
+    # Ms.append(M.item())
     # channel_data.append(channel)
     # np.savetxt(f"{BASE}/outputs/Systematics/denoise_test.csv",
-    #            np.array([channel_data, Js]).T,
-    #            delimiter = ',', header = 'channel,J', comments = '')
+    #            np.array([channel_data, Ms]).T,
+    #            delimiter = ',', header = 'channel,M', comments = '')
     BI, rp, sigma_rp, sigma_BI = an.compute_BI_torch(
         data_pileup,
         data_single,
@@ -138,4 +138,4 @@ outdata = np.concatenate((out_data, np.array(BIs)[:,None], np.array(BI_errs)[:,N
 
 np.savetxt(f"{BASE}/outputs/Systematics/denoise_test_bis.csv",
            outdata,
-           delimiter = ',', header = 'channel,J,BI,BI_uncertainty', comments = '')
+           delimiter = ',', header = 'channel,M,BI,BI_uncertainty', comments = '')

@@ -22,7 +22,7 @@ BIs = []
 BI_uncertainties = []
 rps = []
 rp_uncertainties = []
-Js = []
+Ms = []
 channel_data = []
 pulse_center_ratios_data = []
 pulse_center_ratios = [i*0.05 + 0.2 for i in range(0,10)]
@@ -94,7 +94,7 @@ for channel, StdCut in zip(channels, StdCuts):
         )
         f1_t = torch.tensor(f1_opt, dtype = torch.float32, device = device)
         f2_t = torch.tensor(f2_opt, dtype = torch.float32, device = device)
-        f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
+        f1_opt, f2_opt, M_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
                                                        signal_amp_torch, ratio_distribution_torch, N_sigma=N_sigma,
                                                        n_trials=500, verbose=False,f1_init = f1_t, f2_init = f2_t,
                                                        use_interp = True)
@@ -107,11 +107,11 @@ for channel, StdCut in zip(channels, StdCuts):
                 f"functions_eff{int(acceptance * 100):d}_frac{pulse_center_ratio}_4Pole_Bessel_interp_train",
                 np.array([f1_opt, f2_opt]))
         np.save(directory_path +
-                f"J_{int(acceptance * 100):d}_frac{pulse_center_ratio}_4Pole_Bessel_interp_train",
-                np.array(J_values))
+                f"M_{int(acceptance * 100):d}_frac{pulse_center_ratio}_4Pole_Bessel_interp_train",
+                np.array(M_values))
 
         S_H_delayed, S_H, S2_over_nps = an.precompute_constants(S_torch, H_unit_torch, w_torch, t_torch, nps_torch)
-        J = an.compute_J(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
+        M = an.compute_M(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
                          N_sigma=N_sigma, full_output=False, use_interp = True)
         BI, rp, sigma_rp, sigma_BI = an.compute_BI_torch(
             data_pileup,
@@ -130,21 +130,21 @@ for channel, StdCut in zip(channels, StdCuts):
         BI_uncertainties.append(float(sigma_BI))
         rps.append(float(rp))
         rp_uncertainties.append(float(sigma_rp))
-        Js.append(float(J))
+        Ms.append(float(M))
         channel_data.append(channel)
         pulse_center_ratios_data.append(pulse_center_ratio)
         print(f"Channel {channel}, window size {window_size}, pulse center ratio {pulse_center_ratio}, "
-              f"J: {J:.4e}, 1-rp: {1 - rp:.4f}, BI: {BI:.4e} ± {sigma_BI:.4e}")
+              f"M: {M:.4e}, 1-rp: {1 - rp:.4f}, BI: {BI:.4e} ± {sigma_BI:.4e}")
 BIs = np.array(BIs)
 BI_uncertainties = np.array(BI_uncertainties)
 rps = np.array(rps)
 rp_uncertainties = np.array(rp_uncertainties)
-Js = np.array(Js)
+Ms = np.array(Ms)
 channel_data = np.array(channel_data)
 pulse_center_ratios_data = np.array(pulse_center_ratios_data)
 data = np.column_stack([channel_data, pulse_center_ratios_data, BIs, BI_uncertainties,
-                        1 - rps, rp_uncertainties, Js])
-header = "channel,pulse_center_ratio,BI,BI_uncertainty,1-rp,rp_uncertainty,J"
+                        1 - rps, rp_uncertainties, Ms])
+header = "channel,pulse_center_ratio,BI,BI_uncertainty,1-rp,rp_uncertainty,M"
 np.savetxt(
     f"{BASE}/outputs/Systematics/BI_frac_4Pole_Bessel_interp_train.csv",
     data,

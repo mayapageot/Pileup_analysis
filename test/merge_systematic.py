@@ -15,7 +15,7 @@ df_pos = pd.read_csv("../outputs/Systematics/BI_frac_4Pole_Bessel.csv")
 pos = df_pos.groupby("channel").apply(lambda x: (x["BI"].max()-x["BI"].min())/2*1e5*0.67)
 df_grid = pd.read_csv("../outputs/Systematics/BI_varying_grid_size.csv")
 df_grid = df_grid.loc[df_grid['grid_N_t']>=100]
-grid = df_grid.groupby("channel").apply(lambda x: (x["J"].max()-x["J"].min())/2*1e5*fn.K*0.67)
+grid = df_grid.groupby("channel").apply(lambda x: (x["M"].max()-x["M"].min())/2*1e5*fn.K*0.67)
 
 df_1 = pd.read_csv("../outputs/Systematics/BI_meanpulse_test.csv")
 df_2 = pd.read_csv("../outputs/Systematics/BI_meanpulses_test_2.csv")
@@ -45,3 +45,5 @@ df_sys["detector_id"] = df_sys["channel"].apply(lambda x: channel_ID[channels.in
 
 df_sys = df_sys.sort_values("detector_id")
 print(df_sys.loc[:,["detector_id", "total_sys_min", "total_sys_max"]])
+
+print((df_sys["total_sys_min"]**2).mean()**0.5,(df_sys["total_sys_max"]**2).mean()**0.5)

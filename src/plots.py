@@ -1,8 +1,24 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import binned_statistic
-from matplotlib.ticker import LogLocator
+
+import utility.functions as fn
 import pandas as pd
+from pathlib import Path
+BASE = Path(__file__).resolve().parent.parent
+#color theme, Colorblind-safe palette (Okabe-Ito)
+colors = [
+        "#F0E442",  # yellow
+        "#009E73",  # bluish green
+        "#56B4E9",  # sky blue
+        "#0072B2",  # blue
+        "#CC79A7",  # reddish purple
+        "#D55E00",  # vermillion
+        "#E69F00",  # orange
+        "#8C564B"  # brown
+    ]
+channels = [3,5,9,11,13,15,17,19]
+channel_ID = [5, 9, 11, 10, 4, 2, 12, 3]
 def plot_psd_vs_dt(PSD_single, PSD_pileup, dt_pileup, cut=0.9, bins=40,PSD_min=-0.01,PSD_max =0.02):
     """
     Plot the Pulse Shape Discriminator (PSD) as a function of time difference (dt).
@@ -153,7 +169,7 @@ def plot_biais_vs_dt(PSD_single, PSD_pileup, dt_pileup, cut=0.9, bins=40):
     ax.legend(loc="lower right")
 
     return fig, ax, ax2
-def plot_compted_mu_sigma():
+def plot_computed_mu_sigma():
     """
     Plot a 3D scatter plot of computed values (mu, sigma) for a given channel.
 
@@ -223,42 +239,26 @@ def plot_3d():
     plt.colorbar(label='Mean PSD_double_sel')
     plt.show()
 
-def J_vs_rp():
-    import pandas as pd
-    out_data = pd.read_csv('../outputs/BI_results_interp_v2.csv')
-    plt.scatter(out_data['J'], 1 - out_data['rp'], c = out_data['channel_ID'], cmap = 'tab10')
-    plt.plot([0.08, 0.4], [0.08, 0.4], 'k--')
-    plt.xlabel('J')
-    plt.ylabel('1 - $r_p$')
-    plt.show()
-
 def plot_Trial_vs_J():
+    """
+    Plot the decrease of the M (misidentification rate) parameter with the train iteration across the 8 channels studied
+    """
     fig, ax = plt.subplots(figsize=(8.4, 7))
 
-    channels = [3,5,9,11,13,15,17,19]
     all_J = []
-    colors = [
-        "#000000",  # black
-        "#E69F00",  # orange
-        "#56B4E9",  # sky blue
-        "#009E73",  # bluish green
-        "#F0E442",  # yellow
-        "#0072B2",  # blue
-        "#D55E00",  # vermillion
-        "#CC79A7"  # reddish purple
-    ]
-    channel_IDs = [5, 9, 11, 10, 4, 2, 12, 3]
-    for i, idx in enumerate(np.argsort(channel_IDs)):
+
+
+    for i, idx in enumerate(np.argsort(channel_ID)):
         channel = channels[idx]
-        J_values = np.load(f"../outputs/training_Js/channel_{channel}/J_90_base.npy")
-        all_J.append(J_values)
-        ax.plot(J_values*100, color=colors[i], alpha=0.7)
-        ax.plot([], [], color=colors[i], label=f"Detector {channel_IDs[idx]}",marker="s", markersize=10, linestyle="")
+        M_values = np.load(f"../outputs/training_Js/channel_{channel}/J_90_base.npy")
+        all_J.append(M_values)
+        ax.plot(M_values*100, color=colors[i], alpha=0.7)
+        ax.plot([], [], color=colors[i], label=f"Detector {channel_ID[idx]}",marker="s", markersize=15, linestyle="")
 
-    mean_J = np.mean(all_J, axis=0)
-    ax.plot(mean_J*100, color="black", lw=2.5)
+    mean_J = np.median(all_J, axis=0)
+    ax.plot(mean_J*100, color="black", lw=2,ls="--")
 
-    ax.plot([], color="black", lw=2.5, label="Mean",marker="s", markersize=10, linestyle="")
+    ax.plot([], color="black", lw=2.5, label="Median",marker="s", markersize=15, linestyle="")
 
     ax.set_xlabel("Training iteration", fontsize=20)
     ax.set_ylabel(
@@ -272,40 +272,43 @@ def plot_Trial_vs_J():
     ax.legend(fontsize=20, ncol=2)
 
     fig.tight_layout()
-    fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/J_convergence_all_channels_eff90.pdf", dpi=300, bbox_inches="tight")
+    #fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/J_convergence_all_channels_eff90.pdf", dpi=300, bbox_inches="tight")
+    fig.savefig(f"{BASE}/outputs/plots/J_convergence_all_channels_eff90.pdf", dpi=300, bbox_inches="tight")
     plt.show()
 
 def plot_m1_2_all_channel():
-    channels = [3, 5, 9, 11, 13, 15, 17, 19]
+    """
+    Plot the resulting m reweighting functions after training the the 8 channels
+    """
 
-    f1_all, f2_all = [], []
+    m1_all, m2_all = [], []
 
     fig, ax = plt.subplots(figsize = (8, 6))
 
     for ch in channels:
-        f1, f2 = np.load(f"../outputs/Pileup_filter_functions/channel_{ch}/functions_eff90_base_true_mp.npy")
-        f1_all.append(np.abs(f1))
-        f2_all.append(np.abs(f2))
+        m1, m2 = np.load(f"../outputs/Pileup_filter_functions/channel_{ch}/functions_eff90.npy")
+        m1_all.append(np.abs(m1))
+        m2_all.append(np.abs(m2))
 
-        freq = np.fft.fftfreq(len(f1), d = 1e-4)
+        freq = np.fft.fftfreq(len(m1), d = 1e-4)
         pos_freq = freq > 0
-        ax.plot(freq[pos_freq], f1[pos_freq], alpha = 0.1, color = "k")
-        ax.plot(freq[pos_freq], f2[pos_freq], alpha = 0.1, color = "k")
+        ax.plot(freq[pos_freq], m1[pos_freq], alpha = 0.1, color = "k")
+        ax.plot(freq[pos_freq], m2[pos_freq], alpha = 0.1, color = "k")
 
     # Convert to arrays
-    f1_all = np.array(f1_all)
-    f2_all = np.array(f2_all)
+    m1_all = np.array(m1_all)
+    m2_all = np.array(m2_all)
 
     # Median values
-    f1_med = np.median(f1_all, axis = 0)
-    f2_med = np.median(f2_all, axis = 0)
+    m1_med = np.median(m1_all, axis = 0)
+    m2_med = np.median(m2_all, axis = 0)
 
     # Positive frequencies only
     pos_freq = freq > 0
 
-    ax.plot(freq[pos_freq], f1_med[pos_freq],
+    ax.plot(freq[pos_freq], m1_med[pos_freq],
             color = "#2d508c", linewidth = 2, label = "Median $m_1$")
-    ax.plot(freq[pos_freq], f2_med[pos_freq],
+    ax.plot(freq[pos_freq], m2_med[pos_freq],
             color = "#fc342a", linewidth = 2, label = "Median $m_2$")
 
     # Axis styling
@@ -319,433 +322,14 @@ def plot_m1_2_all_channel():
     fig.tight_layout()
     ax.set_ylim(1e-2, 30)
     # fig.savefig("../outputs/plots/Median_filters_channel_all_eff90.pdf", dpi=300)
-    fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/Median_filters_channel_all_eff90.pdf", dpi=300)
-    plt.show()
-def plot_m1_2_old_all_channel():
-    import src.dataset as ds
-    channels = [3, 5, 9, 11, 13, 15, 17, 19]
-
-    f1_all, f2_all = [], []
-    f1_all_old, f2_all_old = [], []
-    fig, ax = plt.subplots(figsize = (8, 6))
-
-    for ch in channels:
-        f1, f2 = np.load(f"../outputs/Pileup_filter_functions/channel_{ch}/functions_eff90_V2.npy")
-        f1_all.append(np.abs(f1))
-        f2_all.append(np.abs(f2))
-
-        freq = np.fft.fftfreq(len(f1), d = 1e-4)
-        ax.plot(freq[:1000], f1[:1000], alpha = 0.1, color = "k")
-        ax.plot(freq[:1000], f2[:1000], alpha = 0.1, color = "k")
-        H_unit, S, nps, w, pulse_factor = ds.get_channel_specs(ch, n_deriv = 1, window_fct = np.hanning)
-        f1, f2 = np.ones(2000), np.abs(H_unit * S)
-        f1, f2  = f1 / np.mean(np.abs(S * f1 * H_unit)), f2 / np.mean(np.abs(S * f2 * H_unit))
-        f1_all_old.append(np.abs(f1))
-        f2_all_old.append(np.abs(f2))
-
-        freq = np.fft.fftfreq(len(f1), d = 1e-4)
-        ax.plot(freq[:1000], f1[:1000], alpha = 0.1, color = "k")
-        ax.plot(freq[:1000], f2[:1000], alpha = 0.1, color = "k")
-    f1_all_old = np.array(f1_all_old )
-    f2_all_old = np.array(f2_all_old)
-    f1_med_old = np.median(f1_all_old, axis = 0)
-    f2_med_old = np.median(f2_all_old, axis = 0)
-
-    # Convert to arrays
-    f1_all = np.array(f1_all)
-    f2_all = np.array(f2_all)
-
-    # Median values
-    f1_med = np.median(f1_all, axis = 0)
-    f2_med = np.median(f2_all, axis = 0)
-
-    # Positive frequencies only
-    pos_freq = freq > 0
-
-    ax.plot(freq[pos_freq], f1_med[pos_freq],
-            color = "#2d508c", linewidth = 2, label = "Median $m_1$")
-    ax.plot(freq[pos_freq], f2_med[pos_freq],
-            color = "#fc342a", linewidth = 2, label = "Median $m_2$")
-
-    ax.plot(freq[pos_freq], f1_med_old[pos_freq],
-            color = "deepskyblue", linewidth = 2, label = "Median $m_{1,old}$ ")
-    ax.plot(freq[pos_freq], f2_med_old[pos_freq],
-            color = "coral", linewidth = 2, label = "Median $m_{2,old}$")
-
-    # Axis styling
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("Frequency [Hz]", fontsize = 20)
-    ax.set_ylabel("Gain", fontsize = 20)
-    ax.set_title("Frequency vs $m_{1,opt}$ & $m_{2,opt}$", fontsize = 20)
-    ax.tick_params(axis = "both", which = "major", labelsize = 20)
-    ax.legend(fontsize = 20)
-    ax.yaxis.set_major_locator(LogLocator(base = 10.0))
-    ax.set_ylim(1e-2, 1e2)
-    # Minor ticks: base-10 minor ticks (1–9)
-    ax.yaxis.set_minor_locator(
-        LogLocator(base = 10.0, subs = np.arange(1.0, 10.0), numticks = 1000)
-    )
-    ax.grid(True, which = "both", ls = "--", lw = 0.5)
-    fig.tight_layout()
-    fig.show()
-    fig.savefig("../outputs/plots/Median_filters_channel_all_eff90_with_old.pdf", dpi=300)
-
-
-def plot_H1_2_all_channel():
-    import src.dataset as ds
-
-    channels = [3, 5, 9, 11, 13, 15, 17, 19]
-
-    f1_all, f2_all = [], []
-
-    fig, ax = plt.subplots(figsize = (8, 6))
-
-    for ch in channels:
-        f1, f2 = np.load(f"../outputs/Pileup_filter_functions/channel_{ch}/functions_eff90_V2.npy")
-        H_unit, S, nps, w, pulse_factor = ds.get_channel_specs(ch, n_deriv = 1, window_fct = np.hanning)
-        f1,f2 = f1 * H_unit * S, f2 * H_unit * S
-        f1_all.append(np.abs(f1))
-        f2_all.append(np.abs(f2))
-
-        freq = np.fft.fftfreq(len(f1), d = 1e-4)
-        ax.plot(freq[:1000], f1[:1000], alpha = 0.1, color = "k")
-        ax.plot(freq[:1000], f2[:1000], alpha = 0.1, color = "k")
-
-    # Convert to arrays
-    f1_all = np.array(f1_all)
-    f2_all = np.array(f2_all)
-
-    # Median values
-    f1_med = np.median(f1_all, axis = 0)
-    f2_med = np.median(f2_all, axis = 0)
-
-    # Positive frequencies only
-    pos_freq = freq > 0
-
-    ax.plot(freq[pos_freq], f1_med[pos_freq],
-            color = "#2d508c", linewidth = 2, label = "Median $|H_1 \hat{s}|$")
-    ax.plot(freq[pos_freq], f2_med[pos_freq],
-            color = "#fc342a", linewidth = 2, label = "Median $|H_2 \hat{s}|$")
-
-    # Axis styling
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("Frequency [Hz]", fontsize = 16)
-    ax.set_ylabel("Gain", fontsize = 16)
-    ax.set_title("Frequency vs $|H_{1,opt}\hat{s}|$ & $|H_{2,opt}\hat{s}|$", fontsize = 18)
-    ax.tick_params(axis = "both", which = "major", labelsize = 14)
-    ax.legend(fontsize = 14)
-    ax.grid(True, which = "both", ls = "--", lw = 0.5)
-    fig.tight_layout()
-    fig.show()
-    fig.savefig("../outputs/plots/Median_filters_channel_all_eff90.pdf", dpi=300)
-def plot_H1_2_old_all_channel():
-    import src.dataset as ds
-
-    channels = [3, 5, 9, 11, 13, 15, 17, 19]
-
-    f1_all, f2_all = [], []
-    f1_all_old, f2_all_old = [], []
-    fig, ax = plt.subplots(figsize = (8, 6))
-
-    for ch in channels:
-        f1, f2 = np.load(f"../outputs/Pileup_filter_functions/channel_{ch}/functions_eff90_V2.npy")
-        H_unit, S, nps, w, pulse_factor = ds.get_channel_specs(ch, n_deriv = 1, window_fct = np.hanning)
-        f1,f2 = f1 * H_unit * S, f2 * H_unit * S
-        f1_all.append(np.abs(f1))
-        f2_all.append(np.abs(f2))
-
-        freq = np.fft.fftfreq(len(f1), d = 1e-4)
-        ax.plot(freq[:1000], f1[:1000], alpha = 0.1, color = "k")
-        ax.plot(freq[:1000], f2[:1000], alpha = 0.1, color = "k")
-        f1, f2 = np.ones(2000), np.abs(H_unit * S)
-        f1, f2 = f1 / np.mean(np.abs(S * f1 * H_unit)), f2 / np.mean(np.abs(S * f2 * H_unit))
-        f1,f2 = f1 * H_unit * S, f2 * H_unit * S
-        f1_all_old.append(np.abs(f1))
-        f2_all_old.append(np.abs(f2))
-
-        freq = np.fft.fftfreq(len(f1), d = 1e-4)
-        ax.plot(freq[:1000], f1[:1000], alpha = 0.1, color = "k")
-        ax.plot(freq[:1000], f2[:1000], alpha = 0.1, color = "k")
-    f1_all_old = np.array(f1_all_old)
-    f2_all_old = np.array(f2_all_old)
-    f1_med_old = np.median(f1_all_old, axis = 0)
-    f2_med_old = np.median(f2_all_old, axis = 0)
-
-    # Convert to arrays
-    f1_all = np.array(f1_all)
-    f2_all = np.array(f2_all)
-
-    # Median values
-    f1_med = np.median(f1_all, axis = 0)
-    f2_med = np.median(f2_all, axis = 0)
-
-    # Positive frequencies only
-    pos_freq = freq > 0
-
-    ax.plot(freq[pos_freq], f1_med[pos_freq],
-            color = "#2d508c", linewidth = 2, label = "Median $|H_1 \hat{s}|$")
-    ax.plot(freq[pos_freq], f2_med[pos_freq],
-            color = "#fc342a", linewidth = 2, label = "Median $|H_2 \hat{s}|$")
-
-    ax.plot(freq[pos_freq], f1_med_old[pos_freq],
-            color = "deepskyblue", linewidth = 2, label = "Median $|H_{1,old} \hat{s}|$")
-    ax.plot(freq[pos_freq], f2_med_old[pos_freq],
-            color = "coral", linewidth = 2, label ="Median $|H_{1,old} \hat{s}|$")
-    # Axis styling
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("Frequency [Hz]", fontsize = 16)
-    ax.set_ylabel("Gain", fontsize = 16)
-    ax.set_title("Frequency vs $|H_{1,opt}\hat{s}|$ & $|H_{2,opt}\hat{s}|$", fontsize = 18)
-    ax.tick_params(axis = "both", which = "major", labelsize = 14)
-    ax.legend(fontsize = 14)
-    ax.grid(True, which = "both", ls = "--", lw = 0.5)
-    fig.tight_layout()
-    fig.show()
-    # fig.savefig("../outputs/plots/Median_filters_channel_all_eff90.pdf", dpi=300)
-
-    fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/Median_filters_channel_all_eff90.pdf", dpi=300)
-
-def Y_distrib_fixe_r_dt():
-    from torch.utils.data import TensorDataset
-    import src.dataset as ds
-    import src.simulation as sim
-    import src.analysis as an
-    from torch import from_numpy
-    n_deriv = 1
-    channel = 15
-    f1_opt, f2_opt = np.load(f"../outputs/Pileup_filter_functions/channel_{channel}/functions_eff90_V3.npy")
-
-    H_unit, S, nps, w, pulse_factor = ds.get_channel_specs(channel, n_deriv = n_deriv, window_fct = np.hanning)
-    fpulses, signal_freq, noise_freq = sim.simulate_frequency_pulses_fixed_dt_r(S, nps, w, 3e-4, 0.5, nsim = 10000,
-                                                                                seed = 15, signal_scale = 0.001874)
-    dataset_simu = TensorDataset(from_numpy(np.fft.ifft(fpulses, axis = 1).real.astype(np.float32)))
-    PSD_simu, _, _ = an.get_PSD_interpole(dataset_simu, H_unit, f1_opt, f2_opt)
-    plt.hist(PSD_simu, bins = 100, zorder = 3, color = "#2d508c")
-    plt.xlim(0.9955, 0.9998)
-    plt.xlabel("PSD")
-    ax = plt.gca()
-    ax.grid(True, zorder = 0, which = 'both', linestyle = '--', linewidth = 0.5)
-    plt.ylabel("Number of events")
-    plt.title("PSD Distribution for simulated pile-up events r=0.5, dt=0.3 ms")
-
-
-from matplotlib.colors import LogNorm
-def plot_covariance_matrix(result):
-    plt.figure(figsize=(8, 6))
-    plt.imshow(result.covar, cmap='viridis', aspect='auto',norm = LogNorm(vmin=1e-12, vmax=np.max(result_2.covar)))
-    plt.colorbar(label='Covariance')
-    plt.title('Covariance Matrix of Fit Parameters (Bessel order 2)')
-    plt.xticks(range(len(result.var_names)), result.var_names, rotation=45)
-    plt.yticks(range(len(result.var_names)), result.var_names)
-    plt.show()
-
-import matplotlib as mpl
-
-def plot_bessel_filters(channel,fcs):
-    fcts = []
-    for fc in fcs:
-        f1_f2 = np.load(f"../outputs/Pileup_filter_functions/channel_{channel}/bessel_study/functions_fc_{fc}.npy")
-        fcts.append((f1_f2[0], f1_f2[1]))
-    fig, ax = plt.subplots()
-    cmap = plt.get_cmap('viridis')
-    freq = np.fft.rfftfreq(len(fcts[0][0]), d=1e-4)
-    for idx,(f1,f2 )in enumerate(fcts):
-        ax.plot(freq,f1[:1001],c=cmap(idx/len(fcts)),alpha=0.7)
-        ax.plot(freq,f2[:1001],c=cmap(idx/len(fcts)),alpha=0.7)
-    sm = mpl.cm.ScalarMappable(cmap=cmap, norm=mpl.colors.Normalize(vmin=min(fcs), vmax=max(fcs)))
-    cbar = fig.colorbar(sm, ax=ax, pad=0.01)
-    ax.set_xscale('log')
-    ax.set_yscale('log')
-    ax.set_xlabel('Frequency [Hz]')
-    cbar.set_label('Bessel Filter Cutoff Frequency [Hz]')
-    ax.set_ylabel('Filter Amplitude')
-    plt.show()
-
-def plot_J_vs_bessel_fc():
-    channels = [3, 5, 9, 11, 13, 15, 17, 19]
-    channel_ID = [5, 9, 11, 10, 4, 2, 12, 3]
-    for index_channel in np.argsort(channel_ID):
-        channel = channels[index_channel]
-        Js = np.loadtxt(f"../outputs/Pileup_filter_functions/channel_{channel}/bessel_study/Js_vs_fc")
-        fcs = [500, 750, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500]
-        plt.plot(fcs, 1 - np.array(Js), marker = 'o', label = f'detector ID {channel_ID[index_channel]}')
-    plt.xlabel('Bessel Filter Cutoff Frequency [Hz]',fontdict = {'size':14})
-    plt.ylabel('1-J aka "rejection power"',fontdict = {'size':14})
-    plt.legend(fontsize = 12)
-    plt.tick_params(axis = 'both', which = 'major', labelsize = 14)
-    plt.show()
-
-def plot_mp_freq_all_channel():
-    import src.dataset as ds
-    channels = [3, 5, 9, 11, 13, 15, 17, 19]
-    channel_ID = [5, 9, 11, 10, 4, 2, 12, 3]
-    plt.figure(figsize = (8, 6))
-    for index_channel in np.argsort(channel_ID):
-        channel = channels[index_channel]
-        H_unit, S, nps, w, pulse_factor = ds.get_channel_specs(channel, n_deriv = 0, window_fct = np.hanning)
-        plt.plot(w[:1000] / (2 * np.pi), np.abs(S)[:1000], label = f"detector ID {channel_ID[index_channel]}")
-    plt.legend(fontsize = 14)
-    plt.tick_params(axis = 'both', which = 'major', labelsize = 14)
-    plt.xscale('log')
-    plt.yscale('log')
-    plt.xlabel('Frequency [Hz]', fontdict = {'size': 14})
-    plt.ylabel('Pulse Amplitude Spectrum |S(w)|', fontdict = {'size': 14})
-    plt.show()
-def plot_meanpulse_fit(meanpulse, y, t):
-    fig,(ax1,ax2) = plt.subplots(2,1, figsize=(10,8), sharex=True, gridspec_kw={'height_ratios': [3, 1],'hspace':0})
-    ax1.plot(t, y, label="Transfer function model")
-    ax1.plot(t, meanpulse)
-    ax2.plot(t, meanpulse - y, label="Fit Residuals",marker='o',markersize=2,ls="")
-    plt.legend()
-def plot_meanpulse_fit_freq(meanpulse, y,axs=None, labels=None):
-    labels = ["Original mean pulse", "Fitted mean pulse"] if labels is None else labels
-    (ax1,ax2) = plt.subplots(2,1, figsize=(10,8), sharex=True, gridspec_kw={'height_ratios': [3, 1],'hspace':0})[1] if axs is None else axs
-    freq = np.fft.rfftfreq(len(meanpulse),1e-4)
-    window = np.hanning(len(meanpulse))
-    fmp = np.abs(np.fft.rfft(window*meanpulse))
-    ax1.loglog(freq,fmp, label=labels[0],alpha=0.7)
-    ffmp = np.abs(np.fft.rfft(window*y))
-    ax1.loglog(freq,ffmp, label=labels[1],alpha=0.7)
-    ax2.semilogx(freq,ffmp - fmp, label="Residuals",marker='o',markersize=2,ls="")
-    ax2.set_ylim(-0.1*np.max(fmp),0.1*np.max(fmp))
-    ax1.legend()
-    ax1.set_ylim(1e-4,1e2)
-    ax1.set_xlabel("Frequency [Hz]")
-    ax1.set_ylabel("Amplitude")
-def plot_PSD_distribution(
-    PSD_single, PSD_pileup,
-    muY, sigmaY, ratio_distribution,
-    N_sigma=3
-):
-    from scipy.stats import norm
-
-    fig, (ax1, ax2) = plt.subplots(
-        2, 1,
-        figsize=(16, 6),
-        sharex=True,
-        gridspec_kw={'height_ratios': [3, 1], 'hspace': 0}
-    )
-
-    # -----------------------
-    # Single events
-    # -----------------------
-    cut = np.percentile(PSD_single.real, 10)
-
-    hist_single, bins_single = np.histogram(
-        PSD_single, bins=200, range=(0.99, 1.01), density=True
-    )
-    A_single = 0.5 * (bins_single[1:] + bins_single[:-1])
-
-    mu = muY[0, 0].numpy()
-    sigma = sigmaY[0, 0].numpy()
-    pdf_single = norm.pdf(A_single, mu, sigma)
-
-    ax1.plot(
-        A_single, hist_single,
-        drawstyle='steps-mid',
-        color='tab:blue',
-        alpha=0.6,
-        lw=1.5,
-        label='Single events (MC)'
-    )
-    ax1.plot(
-        A_single, pdf_single,
-        color='tab:blue',
-        lw=2.5,
-        label='Single events (model)'
-    )
-
-
-    # -----------------------
-    # Pileup events
-    # -----------------------
-    hist_pu, bins_pu = np.histogram(
-        PSD_pileup, bins=200, range=(0.96, 1.01), density=True
-    )
-    A_pu = 0.5 * (bins_pu[1:] + bins_pu[:-1])
-
-    ax1.plot(
-        A_pu, hist_pu,
-        drawstyle='steps-mid',
-        color='tab:orange',
-        alpha=0.6,
-        lw=1.5,
-        label='Pileup events (MC)'
-    )
-
-    pdf_pu = np.sum(
-        norm.pdf(A_pu[None, None, :], muY[:, :, None], sigmaY[:, :, None])
-        * ratio_distribution[:, None, None],
-        axis=(0, 1)
-    ).real
-    pdf_pu /= np.trapz(pdf_pu, A_pu)
-
-    ax1.plot(
-        A_pu, pdf_pu,
-        color='tab:orange',
-        lw=2.5,
-        label='Pileup events (model)'
-    )
-
-    ax1.axvline(
-        cut, color='tab:red', ls='--', lw=1.5,
-        label='10th percentile cut'
-    )
-    ax1.axvline(
-        mu - N_sigma * sigma,
-        color='tab:green', ls='-.', lw=1.5,
-        label=rf'$\mu - {N_sigma:.2f}\sigma$'
-    )
-
-    # -----------------------
-    # Residuals
-    # -----------------------
-    ax2.axhline(0, color='k', lw=1, alpha=0.6)
-
-    ax2.plot(
-        A_single, pdf_single - hist_single,
-        color='tab:blue',
-        lw=1.5,
-        label='Model − MC (single)'
-    )
-    ax2.plot(
-        A_pu, pdf_pu - hist_pu,
-        color='tab:orange',
-        lw=1.5,
-        label='Model − MC (pileup)'
-    )
-
-    res_max = max(
-        np.abs(pdf_single - hist_single).max(),
-        np.abs(pdf_pu - hist_pu).max()
-    )
-    ax2.set_ylim(-1.1 * res_max, 1.1 * res_max)
-
-    # -----------------------
-    # Final formatting
-    # -----------------------
-    ax1.set_xlim(0.96, 1.01)
-    ax1.set_ylabel("Probability density")
-    ax2.set_ylabel("Residual")
-    ax2.set_xlabel("PSD")
-
-    ax1.legend(frameon=False, ncol=3)
-    ax2.legend(frameon=False)
-
-    ax1.grid(axis='y', alpha=0.3)
-    ax2.grid(axis='y', alpha=0.3)
-
+    fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/Median_filters_channel_all_eff90.png", dpi=300)
     plt.show()
 
 
-def pulse_template():
-    import numpy as np
-    import pandas as pd
-    import matplotlib.pyplot as plt
-
+def pulse_template_injection():
+    """
+    Plot the BI resulting of different pulse template injection for the 8 channels.
+    """
     df_1 = pd.read_csv("../outputs/Systematics/BI_meanpulse_test.csv")
     df_2 = pd.read_csv("../outputs/Systematics/BI_meanpulses_test_2.csv")
     df = pd.concat((df_1, df_2))
@@ -835,7 +419,7 @@ def pulse_template():
 
     # Legend
     plt.plot([], [], marker = "X", ls = "", ms = 12, color = "#D55E00",
-             label = "single high energy pulses\nused in [49]")
+             label = "single high energy pulses\nused in [50]")
     plt.plot([], [], marker="P", ls="", ms=12, color="#0072B2",
              label="single high energy pulses\nselected at different amplitudes")
     plt.plot([], [], marker="D", ls="", ms=12, color="#E69F00",
@@ -851,42 +435,13 @@ def pulse_template():
     plt.subplots_adjust(left = 0.12)
     plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/pulse_template.pdf", dpi=300)
     plt.show()
-channel_ID = [5, 9, 11, 10, 4, 2, 12, 3]
-channels = [3, 5, 9, 11, 13, 15, 17, 19]
-def RT_A_fit_plot():
-    import utility.functions as fn
-    df = pd.read_csv("../outputs/Systematics/BI_pulsetimeamp_test.csv")
-    from scipy.optimize import curve_fit
-    fig, (ax, ax_res) = plt.subplots(2, 1, figsize = (12, 8), sharex = True,
-                                     gridspec_kw = {'height_ratios': [3, 1], 'hspace': 0})
-    for index_channel in np.argsort(channel_ID):
-        channel = channels[index_channel]
-        data_channel = df[df["channel"] == channel]
-        l, = ax.plot(data_channel["risetime"] ** 0.7514 / data_channel["amp_gain"] ** 0.5773,
-                     data_channel["J"] * fn.K * 1e5, marker = 'o', ls = "", ms = 1)
-        linear_f = lambda x, a, b: a * x + b
-        popt, pcov = curve_fit(linear_f, data_channel["risetime"] ** 0.7514 / data_channel["amp_gain"] ** 0.5773,
-                               data_channel["J"] * fn.K * 1e5)
-        x_fit = np.linspace(1.5, 8, 100)
-        ax.plot(x_fit, popt[0] * x_fit + popt[1], ls = "--", lw=0.7,
-                c = l.get_color())
-        residuals = data_channel["J"] * fn.K * 1e5 - linear_f(
-            data_channel["risetime"] ** 0.7514 / data_channel["amp_gain"] ** 0.5773, *popt)
-        ax_res.plot(data_channel["risetime"] ** 0.7514 / data_channel["amp_gain"] ** 0.5773, residuals, marker = 'o',
-                    ls = "", c = l.get_color(), ms = 1)
-        ax.plot([], [], c = l.get_color(), label = f"detector ID {channel_ID[index_channel]}",marker='s',ls="")
-
-    ax.legend(fontsize = 12)
-    ax.set_ylabel("Estimated BI [1e-5 cts/keV/kg/year]",fontdict = {'size': 14})
-    ax_res.axhline(0, color = 'black', ls = '--')
-    ax_res.set_xlabel("$RT^{n}/A^{m}$ with n=0.751 and m=0.577",fontdict = {'size': 14})
-    ax_res.set_ylabel("Residuals [1e-5 cts/keV/kg/year]",fontdict = {'size': 14})
-    ax.tick_params(axis = 'both', which = 'major', labelsize = 14)
-    ax_res.tick_params(axis = 'both', which = 'major', labelsize = 14)
-    fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/RT_A_fit.pdf", dpi = 300)
-
-    plt.show()
 def grid_size_systematics():
+    """
+    Plot the impact of the grid size of dt and r used for computation on the BI.
+
+    The y axis chosen here is the relative difference between simulated and analytical BI as the grid size mainly
+    impact the analytical BI and not so much the simulated BI.
+    """
     import numpy as np
     import pandas as pd
     import matplotlib.pyplot as plt
@@ -895,16 +450,6 @@ def grid_size_systematics():
     df = pd.read_csv("../outputs/Systematics/BI_varying_grid_size.csv")
 
     # Colorblind-safe palette (Okabe-Ito)
-    colors = [
-        "#000000",  # black
-        "#E69F00",  # orange
-        "#56B4E9",  # sky blue
-        "#009E73",  # bluish green
-        "#F0E442",  # yellow
-        "#0072B2",  # blue
-        "#D55E00",  # vermillion
-        "#CC79A7"  # reddish purple
-    ]
 
     markers = ['o', 's', 'D', '^', 'v', 'P', 'X']
 
@@ -917,7 +462,7 @@ def grid_size_systematics():
         grid_N = data_channel["grid_N_t"].to_numpy()
         BI = data_channel["BI"].to_numpy()
 
-        rel_diff = (data_channel["BI"] - data_channel["J"] * fn.K) / (data_channel["BI"] + data_channel["J"] * fn.K) * 200
+        rel_diff = (data_channel["BI"] - data_channel["M"] * fn.K) / (data_channel["BI"] + data_channel["M"] * fn.K) * 200
         plt.plot(
             grid_N,
             rel_diff,
@@ -926,24 +471,8 @@ def grid_size_systematics():
             ls="-",
             lw=0.4,
             markersize=6,
-            label=f"Detector ID {channel_ID[index_channel]}"
+            label=f"Detector {channel_ID[index_channel]}"
         )
-        # plt.errorbar(
-        #     grid_N,
-        #     rel_diff,
-        #     data_channel["BI_uncertainty"] / (data_channel["BI"] + data_channel["J"] * fn.K) * 200,
-        #     marker = markers[i % len(markers)],
-        #     color = colors[i % len(colors)],
-        #     ls = "-",
-        #     lw = 0.4,
-        #     label = f"Detector ID {channel_ID[index_channel]}",
-        #     markersize = 6,
-        #     capthick = 2,
-        #     elinewidth = 2,
-        #     capsize = 5
-        # )
-        print(grid_N[len(grid_N)-np.argmax(np.abs(rel_diff-np.max(rel_diff))[::-1]>= 1)])
-
     # Threshold line (neutral color)
     plt.axvline(
         100,
@@ -958,10 +487,6 @@ def grid_size_systematics():
 
     plt.xticks(grid_N[::2])
     plt.xticks(grid_N[1::2], minor=True)
-
-    #plt.yticks(np.arange(0, 14, 2))
-    #plt.yticks(np.arange(1, 14, 2), minor=True)
-
     plt.tick_params(axis='both', which='major', labelsize=20)
 
     # Grid styling
@@ -972,8 +497,13 @@ def grid_size_systematics():
     plt.tight_layout()
 
     plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/grid_size_systematics.pdf", dpi=300)
+    plt.savefig(f"{BASE}/outputs/plots/grid_size_systematics.pdf", dpi=300)
+
     plt.show()
 def pulse_pos_systematic():
+    """
+        Plot the impact of the pulse position in the window on the BI.
+    """
     df = pd.read_csv("../outputs/Systematics/BI_frac_4Pole_Bessel.csv")
     for index_channel in np.argsort(channel_ID):
         channel = channels[index_channel]
@@ -982,7 +512,6 @@ def pulse_pos_systematic():
         plt.errorbar(data_channel["pulse_center_ratio"], data_channel["BI"] * 1e5,
                      yerr = data_channel["BI_uncertainty"] * 1e5, label = f"detector ID {channel_ID[index_channel]}",
                      marker = 'o', ls = "")
-        # print((np.max(data_channel["J"]) - np.min(data_channel["J"]))/np.mean(data_channel["J"]))
     plt.xlabel("Pulse center position within window")
     plt.ylabel("BI [1e-5 cts/keV/kg/year]")
     plt.legend(ncols = 3, bbox_to_anchor = (0.49, 0.19, 0.5, 0.5), shadow = True)
@@ -990,6 +519,9 @@ def pulse_pos_systematic():
     plt.grid()
     plt.show()
 def window_size_systematic():
+    """
+        Plot the impact of the window size on the BI.
+    """
     df = pd.read_csv("../outputs/Systematics/BI_window_size.csv")
     for index_channel in np.argsort(channel_ID):
         channel = channels[index_channel]
@@ -998,7 +530,6 @@ def window_size_systematic():
         plt.errorbar(data_channel["window_size"]*1e-4, data_channel["BI"] * 1e5,
                      yerr = data_channel["BI_uncertainty"] * 1e5, label = f"detector ID {channel_ID[index_channel]}",
                      marker = 'o', ls = "")
-        # print((np.max(data_channel["J"]) - np.min(data_channel["J"]))/np.mean(data_channel["J"]))
     plt.xlabel("Window size [s]")
     plt.ylabel("BI [1e-5 cts/keV/kg/year]")
     plt.legend(ncols = 3, shadow = True)
@@ -1006,100 +537,226 @@ def window_size_systematic():
     plt.ylim(4.1, 7)
     #plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/window_size_systematics.pdf", dpi = 300)
     plt.show()
+
 def compare_simulated_analytical_BI():
+    """
+    Plot the relative difference of the BI between the analysis applyed on simulated dataset and the analytical
+    prediction
+    """
     import numpy as np
     import pandas as pd
     import matplotlib.pyplot as plt
     import utility.functions as fn
 
     # Load data
-    #df1 = pd.read_csv("../outputs/Systematics/BI_meanpulse_test.csv", engine="python")
-    #df2 = pd.read_csv("../outputs/Systematics/BI_meanpulses_test_2.csv", engine="python")
-    #df = pd.concat((df1, df2), ignore_index=True)
-    df = pd.read_csv("../outputs/BI_results_base_bis.csv")
-    #df = pd.read_csv("../outputs/Systematics/BI_varying_grid_size.csv")
-    #df = df[df["grid_N"] == 100]
-    # Add detector ID and sort
-    df["detector_id"] = df["channel"].apply(lambda x: channel_ID[channels.index(x)])
+    # df = pd.read_csv("../outputs/BI_results_base_bis.csv")
+    df_1 = pd.read_csv("../outputs/Systematics/BI_meanpulse_test.csv")
+    df_2 = pd.read_csv("../outputs/Systematics/BI_meanpulses_test_2.csv")
+    df_injection = pd.concat((df_1, df_2))
+    df_injection = df_injection.loc[df_injection["meanpulse_type"] != "fit"]
+
+    meanpulse_type = "raw"  # "mean" or "raw"
+    df = df_injection.loc[df_injection["meanpulse_type"] == meanpulse_type]
+    # Detector IDs
+    df["detector_id"] = df["channel"].apply(
+        lambda x: channel_ID[channels.index(x)]
+    )
     df.sort_values("detector_id", inplace=True)
 
-    # Select mean pulse only (can be extended later)
-    # pulse_type = "mean"
-    # df_sub = df[df["meanpulse_type"] == pulse_type].copy()
-    df_sub = df
-    # Compute relative difference [%]
-    analytical_BI = df_sub["J"] * fn.K
-    simulated_BI = df_sub["BI"]
+    analytical_BI_same_mp = [7.21E-05,6.84E-05,4.41E-05,4.59E-05,5.58E-05,4.73E-05,5.38E-05,5.17E-05]
+    analytical_BI = df["M"] * fn.K
 
-    rel_diff = (simulated_BI - analytical_BI) / (simulated_BI + analytical_BI) * 200
-    rel_diff_unc = df_sub["BI_uncertainty"] / (simulated_BI + analytical_BI) * 200
-
-    # Categorical x positions
-    detector_ids = df_sub["detector_id"].values
-    x = np.arange(len(detector_ids))
-
-    # Colorblind-friendly color
-    color = "#0072B2"  # Okabe-Ito blue
-
-    plt.figure(figsize=(8, 5))
-
-    plt.errorbar(
-        x,
-        rel_diff,
-        yerr=rel_diff_unc,
-        marker='_',
-        ls='',
-        capsize=3*2,
-        markersize=12,
-        elinewidth=2,
-        capthick=2,
-        markeredgewidth = 2,
-        color=color
+    simulated_BI = df["BI"]
+    rel_diff = (
+        (simulated_BI - analytical_BI)
+        / (simulated_BI + analytical_BI)
+        * 200
+    )
+    rel_diff_same_mp = (
+        (simulated_BI - analytical_BI_same_mp)
+        / (simulated_BI + analytical_BI_same_mp)
+        * 200
     )
 
-    # Reference line
-    plt.axhline(0, color='black', ls='--', linewidth=1)
+    rel_diff_unc = (
+        df["BI_uncertainty"]
+        / (simulated_BI + analytical_BI)
+        * 200
+    )
+    rel_diff_unc_same_mp = (
+        df["BI_uncertainty"]
+        / (simulated_BI + analytical_BI_same_mp)
+        * 200
+    )
+    df_mp_raw = pd.read_csv("../outputs/BI_results_raw_mp.csv")
+    df_mp_raw["detector_id"] = df_mp_raw["channel"].apply(
+        lambda x: channel_ID[channels.index(x)]
+    )
+    df_mp_raw.sort_values("detector_id", inplace = True)
+    simulated_BI_raw_mp = df_mp_raw["BI"]
+    analytical_BI_raw_mp = df_mp_raw["M"] * fn.K
+    rel_diff_raw_mp = (
+        (simulated_BI_raw_mp - analytical_BI_raw_mp)
+        / (simulated_BI_raw_mp + analytical_BI_raw_mp)
+        * 200
+    )
+    rel_diff_unc_raw_mp = (
+        df_mp_raw["BI_uncertainty"]
+        / (simulated_BI_raw_mp + analytical_BI_raw_mp)
+        * 200
+    )
 
-    # Axes labels
-    plt.xlabel("Detector ID", fontsize=20)
-    plt.ylabel("Relative difference\n(simulated − analytical BI) [%]", fontsize=20)
+    diff_raw_mean = (simulated_BI_raw_mp.values - simulated_BI.values) / (simulated_BI_raw_mp.values + simulated_BI.values) * 200
+    diff_raw_mean_unc = np.sqrt(df_mp_raw["BI_uncertainty"].values**2 + df["BI_uncertainty"].values**2) / (simulated_BI_raw_mp.values + simulated_BI.values) * 200
+    detector_ids = df["detector_id"].values
+    x = np.arange(len(detector_ids))
 
-    # Ticks
-    plt.xticks(x, detector_ids.astype(str))
-    plt.tick_params(axis='both', which='major', labelsize=20)
+    median = np.median(rel_diff)
 
-    # Grid
-    plt.grid(alpha=0.3)
+    fig, ax = plt.subplots(figsize=(8, 5))
 
+    # Symmetric y-range
+    ylim = 1.15 * np.max(np.abs(rel_diff) + rel_diff_unc)
+
+    # Light band around zero
+
+    # Zero reference
+    ax.axhline(0, color="0.4", ls="--", lw=1.5)
+
+    # Error bars
+    ax.errorbar(
+        x - 0.15,
+        rel_diff,
+        yerr = rel_diff_unc,
+        fmt = "o",
+        markersize = 7,
+        color = "b",  # colors[i],
+        ecolor = "b",  # colors[i],
+        elinewidth = 1.8,
+        capsize = 4,
+        capthick = 1.8,
+        markeredgewidth = 1.5,
+        zorder = 3,
+        ls="-",
+        lw=0.4
+    )
+    ax.errorbar(
+        x - 0.05,
+        rel_diff_same_mp,
+        yerr = rel_diff_unc_same_mp,
+        fmt = "o",
+        markersize = 7,
+        color = "r",  # colors[i],
+        ecolor = "r",  # colors[i],
+        elinewidth = 1.8,
+        capsize = 4,
+        capthick = 1.8,
+        markeredgewidth = 1.5,
+        zorder = 3,
+        ls="-",
+        lw=0.4
+    )
+    ax.errorbar(
+        x + 0.05,
+        rel_diff_raw_mp,
+        yerr = rel_diff_unc_raw_mp,
+        fmt = "o",
+        markersize = 7,
+        color = "g",  # colors[i],
+        ecolor = "g",  # colors[i],
+        elinewidth = 1.8,
+        capsize = 4,
+        capthick = 1.8,
+        markeredgewidth = 1.5,
+        zorder = 3,
+        ls="-",
+        lw=0.4
+    )
+    ax.errorbar(
+        x + 0.15,
+        diff_raw_mean,
+        yerr = diff_raw_mean_unc,
+        fmt = "o",
+        markersize = 7,
+        color = "magenta",  # colors[i],
+        ecolor = "magenta",  # colors[i],
+        elinewidth = 1.8,
+        capsize = 4,
+        capthick = 1.8,
+        markeredgewidth = 1.5,
+        zorder = 3,
+        ls="-",
+        lw=0.4
+    )
+
+    ax.set_ylim(-ylim, ylim)
+
+
+    ax.plot([], [], color = "b", marker = "o", ls = "",
+            label = "Simulation - Analytical mean pulse\nFilter: mean-pulse training")
+
+    ax.plot([], [], color = "r", marker = "o", ls = "",
+            label = "Simulation - Analytical injected pulse\nFilter: mean-pulse training")
+
+    ax.plot([], [], color = "g", marker = "o", ls = "",
+            label = "Simulation - Analytical injected pulse\nFilter: injected-pulse training")
+
+    ax.plot([], [], color = "magenta", marker = "o", ls = "",
+            label = "Simulation (injected-pulse training) - Simulation(mean-pulse training)")
+
+    ax.legend(fontsize = 14, frameon = True, loc = "lower right")
+    ax.set_xticks(x)
+    ax.set_xticklabels(detector_ids.astype(str))
+
+    ax.tick_params(axis="both", labelsize=18)
+
+    ax.grid(axis="y", alpha=0.3)
+
+    # Clean journal style
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.set_xlabel("Detector ID", fontsize = 20)
+    ax.set_ylabel("Relative difference\n(simulated − analytical) BI [%]", fontsize = 20)
     plt.tight_layout()
-    plt.subplots_adjust(left = 0.2)
+
     plt.savefig(
         "/local/home/mp274748/Documents/paper/pile_up_cupid/figures/simulated_analytical_BI.pdf",
-        dpi=300
+        dpi=300,
+    )
+    plt.savefig(
+        f"{BASE}/outputs/plots/simulated_analytical_BI.pdf",
+        dpi = 300,
     )
 
     plt.show()
 
-
 def WP_test():
-    import pandas as pd
-    import matplotlib.pyplot as plt
+    """
+    Plot the BI resulting of the study for different Working Point (WP) i.e. the biais applied to the NTD.
 
-    df = pd.read_csv(f"../outputs/Systematics/BI_WP.csv")
+    This has only been done only on 2 channels for which working point exploration has been done during CROSS RUN9.
+    """
 
-    fig, ax1 = plt.subplots(1, figsize=(8.4, 7))
+    df = pd.read_csv("../outputs/Systematics/BI_WP.csv")
+
+    fig, ax1 = plt.subplots(figsize=(8.4, 7))
 
     # Colorblind-friendly palette (Okabe-Ito)
     color_ch1 = "#0072B2"  # blue
     color_ch2 = "#CC79A7"  # purple
 
-    # Channel 3 (left axis)
+    primary_ticks = np.concatenate(([0.279], np.arange(2, 11, 2)))
+
+    # -----------------------
+    # Channel 3
+    # -----------------------
     channel = 3
-    data_channel = df[df["channel"] == channel]
-    data_channel.sort_values("biais_current",inplace=True)
-    p1, = ax1.plot(
-        data_channel["biais_current"],
-        data_channel["J_value"] * 100,
+    data_ch1 = df[df["channel"] == channel].copy()
+    data_ch1 = data_ch1.sort_values("biais_current")
+
+    ax1.plot(
+        data_ch1["biais_current"],
+        data_ch1["J_value"] * 100,
         marker='o',
         ls='-',
         lw=1,
@@ -1108,13 +765,34 @@ def WP_test():
         label=f"Detector ID {channel_ID[channels.index(channel)]}"
     )
 
-    # Channel 5 (right axis)
+    factor1 = np.mean(data_ch1["resistance"] * data_ch1["biais_current"])
+
+    ax_bis = ax1.secondary_xaxis(
+        'top',
+        functions=(lambda x: factor1 / x, lambda x: factor1 / x)
+    )
+
+    ax_bis.set_xlabel(
+        f"Bias resistance detector {channel_ID[channels.index(channel)]} [M$\Omega$]",
+        fontsize = 16,
+        color = color_ch1
+    )
+
+    ax_bis.set_xticks(np.round(factor1 / primary_ticks, 2))
+
+    ax_bis.tick_params(axis='x', colors=color_ch1, labelsize=14)
+    ax_bis.spines['top'].set_color(color_ch1)
+
+    # -----------------------
+    # Channel 5 (offset top axis)
+    # -----------------------
     channel = 5
-    data_channel = df[df["channel"] == channel]
-    data_channel.sort_values("biais_current",inplace=True)
-    p2, = ax1.plot(
-        data_channel["biais_current"],
-        data_channel["J_value"] * 100,
+    data_ch2 = df[df["channel"] == channel].copy()
+    data_ch2 = data_ch2.sort_values("biais_current")
+
+    ax1.plot(
+        data_ch2["biais_current"],
+        data_ch2["J_value"] * 100,
         marker='s',
         ls='-',
         lw=1,
@@ -1123,28 +801,64 @@ def WP_test():
         label=f"Detector ID {channel_ID[channels.index(channel)]}"
     )
 
-    # Labels
+    factor2 = np.mean(data_ch2["resistance"] * data_ch2["biais_current"])
+
+    ax_ter = ax1.secondary_xaxis(
+        'top',
+        functions=(lambda x: factor2 / x, lambda x: factor2 / x)
+    )
+
+    ax_ter.spines["top"].set_position(("outward", 45))
+
+    ax_ter.set_xlabel(
+        f"Bias resistance detector {channel_ID[channels.index(channel)]} [M$\Omega$]",
+        fontsize = 16,
+        color = color_ch2
+    )
+    ax_ter.set_xticks( np.round(factor2 / primary_ticks, 2))
+
+    ax_ter.tick_params(axis='x', colors=color_ch2, labelsize=14)
+    ax_ter.spines['top'].set_color(color_ch2)
+
+    # -----------------------
+    # Main axis styling
+    # -----------------------
     ax1.set_xlabel("Bias current [nA]", fontsize=20)
 
     ax1.set_ylabel(
-        r"Global pile-up misidentification rate $\langle \mathcal{M} \rangle$ [%]",
+        r"Residual unidentified pile-up rate $\langle \mathcal{M} \rangle$ [%]",
         fontsize=20
     )
 
-    ax1.tick_params(axis='both', which='major', labelsize=20)
-    # Grid only on x (neutral)
-    ax1.grid( alpha=0.3)
+    ax1.set_xticks(primary_ticks)
+    ax1.set_xticklabels([f"{primary_ticks[0]:.3f}"]+[f"{int(tick)}" for tick in primary_ticks[1:]])
 
-    # Offset text size
+    ax1.tick_params(axis='both', which='major', labelsize=16)
+    ax1.grid(alpha=0.25)
+
     ax1.yaxis.get_offset_text().set_fontsize(14)
 
+    # Legend
+    ax1.legend(fontsize=16, frameon=False)
+
     fig.tight_layout()
-    ax1.legend(fontsize=20)
-    plt.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/WP_test.pdf", dpi=300)
+
+    plt.savefig(
+        f"{BASE}/outputs/plots/WP_test.pdf",
+        dpi=300
+    )
+    # plt.savefig(
+    #    "/local/home/mp274748/Documents/paper/pile_up_cupid/figures/WP_test.pdf",
+    #    dpi=300
+    # )
     plt.show()
 
 
 def meanpulse_with_dt_range():
+    """
+    Figure of a Light Detector (LD) pulse template with the highlighted dt range explored for the pileup analysis.
+    This range is set a being the threshold above which all the pileup are detected.
+    """
     from scipy.interpolate import interp1d
     mp = np.load("../outputs/meanpulses_build/channel3_meanpulse_raw.npy")
     mp = mp / np.max(mp)
@@ -1166,11 +880,14 @@ def meanpulse_with_dt_range():
     ax.grid(linestyle = '--', linewidth = 1)
     ax.grid(which = 'minor', linestyle = ':', linewidth = 0.5)
     fig.set_tight_layout(True)
-    fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/meanpulse_with_dt_range.pdf", dpi = 300)
+    fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/meanpulse_with_dt_range.pdf")
     plt.show()
 
 
 def r_PDF():
+    """
+    Plot the probablilty distribution of the relative amplitude r=E2/(E1+E2) of a pileup event from the 2v2b spectrum.
+    """
     from utility.double_beta_spectrum import pdf_ratio2b
     fig, ax = plt.subplots(figsize = (8, 6))
     r = np.linspace(0, 1, 1000)
@@ -1189,23 +906,207 @@ def r_PDF():
     plt.show()
 
 def bb_spectrum():
+    """
+    Plot the 2v2b spectrum.
+    """
     from utility.double_beta_spectrum import g
-    fig, ax = plt.subplots(figsize = (8, 6))
-    E = np.linspace(0, 3.034, 1000)
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    # Single-event energy distribution
+    E_max = 3.034
+    E = np.linspace(0, E_max, 1000)
     spectrum = g(E)
-    ax.plot(E, spectrum, color = 'blue')
-    ax.fill_between(E, np.zeros_like(E), spectrum, color = 'blue', alpha = 0.2)
+
+    # Energy bin width
+    dE = E[1] - E[0]
+
+    # Sum of two independent events:
+    # f_sum(E) = integral f(E') f(E-E') dE'
+    spectrum_sum = np.convolve(spectrum, spectrum) * dE
+
+    # Energy axis for the convolution
+    E_sum = np.linspace(0, 2 * E_max, len(spectrum_sum))
+
+    # Plot single-event spectrum
+    ax.plot(
+        E,
+        spectrum,
+        color='blue',
+        label='Single event'
+    )
+
+    # Plot 2-event sum spectrum
+    ax.plot(
+        E_sum,
+        spectrum_sum,
+        color='red',
+        label='Sum of 2 events'
+    )
+
+    # Optional: fill the pile-up spectrum
+    ax.fill_between(
+        E_sum,
+        np.zeros_like(E_sum),
+        spectrum_sum,
+        color='red',
+        alpha=0.15
+    )
+
+    ax.set_xlabel('Energy [MeV]', fontsize=20)
+    ax.set_ylabel('Energy distribution [Counts/keV]', fontsize=20)
+
+    ax.tick_params(axis='both', labelsize=20)
+
+    ax.grid(linestyle='--', linewidth=1)
+    ax.legend(fontsize=16)
+
+    fig.set_tight_layout(True)
+
+    fig.savefig(
+        "/local/home/mp274748/Documents/paper/pile_up_cupid/figures/bb_spectrum.pdf",
+        dpi=300
+    )
+
+    plt.show()
+def bb_spectrum_with_PU():
+    """
+    Plot of the 2v2b spectrum with the spectrum of the sum of two 2v2b event.
+    """
+    from utility.double_beta_spectrum import g
+
+    fig, ax = plt.subplots(figsize = (8, 6))
+
+    # Single-event spectrum
+    E_max = 3.034
+    E = np.linspace(0, E_max, 1000)
+    spectrum = g(E)
+    spectrum /= 1000
+    # Energy step
+    dE = E[1] - E[0]
+
+    # Convolution: sum of two independent events
+    spectrum_sum = np.convolve(spectrum, spectrum) * dE
+    E_sum = np.linspace(0, 2 * E_max, len(spectrum_sum))
+
+    # Normalize the 2-event spectrum to the same area
+    norm_single = np.trapz(spectrum, E)
+    norm_sum = np.trapz(spectrum_sum, E_sum)
+
+    spectrum_sum *= norm_single / norm_sum
+    # Plot
+    ax.plot(
+        E,
+        spectrum,
+        color = 'blue'
+    )
+
+    ax.fill_between(
+        E,
+        0,
+        spectrum,
+        color = 'blue',
+        alpha = 0.2
+    )
+
+    ax.plot(
+        [], [],
+        ls = "",
+        marker = "s",
+        markerfacecolor = (0, 0, 1, 0.2),
+        markeredgecolor = "blue",
+        markeredgewidth = 1,
+        markersize = 15,
+        label = r"$2\nu\beta\beta$"
+    )
+    # Convert keV limits to MeV since E_sum is in MeV
+    E_low = 3.019
+    E_high = 3.049
+
+    # Full spectrum
+    ax.plot(
+       E_sum,
+       spectrum_sum,
+       color = 'deepskyblue'
+    )
+
+    # Normal region
+    mask_normal = (E_sum < E_low) | (E_sum > E_high)
+
+    ax.fill_between(
+        E_sum,
+        0,
+        spectrum_sum,
+        where = mask_normal,
+        color = 'deepskyblue',
+        alpha = 0.2
+    )
+
+    # Highlighted region: 3019–3049 keV
+    mask_roi = (E_sum >= E_low) & (E_sum <= E_high)
+    ax.plot(
+        E_sum[mask_roi],
+        spectrum_sum[mask_roi],
+        color = 'red'
+    )
+    ax.fill_between(
+        E_sum,
+        0,
+        spectrum_sum,
+        where = mask_roi,
+        color = 'red',
+        alpha = 0.5
+    )
+    ax.plot(
+        [], [],
+        ls = "",
+        marker = "s",
+        markerfacecolor = (0, 191/255, 1, 0.2),
+        markeredgecolor = "deepskyblue",
+        markeredgewidth = 1,
+        markersize = 15,
+        label = r"$2\nu\beta\beta$ pile-up"
+    )
+    ax.plot(
+        [], [],
+        ls = "",
+        marker = "s",
+        markerfacecolor = (1, 0, 0, 0.5),
+        markeredgecolor = "red",
+        markeredgewidth = 1,
+        markersize = 15,
+        label = r"CUPID-$0\nu\beta\beta$ ROI"
+    )
+
     ax.set_xlabel('Energy [MeV]', fontsize = 20)
-    ax.set_ylabel('Energy distribution [Counts/keV]', fontsize = 20)
+    ax.set_ylabel(r'Energy density [keV$^{-1}$]', fontsize=20)
+
     plt.xticks(fontsize = 20)
     plt.yticks(fontsize = 20)
-    ax.grid(linestyle = '--', linewidth = 1)
+    ax.set_xlim(-0.1, 4.5)
+    #ax.grid(linestyle = '--', linewidth = 1)
+    ax.legend(fontsize = 16)
+    #no axis:
+    # Hide top and right spines
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    # Keep only left and bottom axes
+    ax.spines["left"].set_visible(True)
+    ax.spines["bottom"].set_visible(True)
+
     fig.set_tight_layout(True)
-    fig.savefig("/local/home/mp274748/Documents/paper/pile_up_cupid/figures/bb_spectrum.pdf", dpi = 300)
+
+    fig.savefig(
+        "/local/home/mp274748/Documents/presentation/thesis_defense/bb_spectrum_bis.png",
+        dpi = 300
+    )
+
     plt.show()
 
-
 def bb_spectrum_with_Q_value_peak():
+    """
+    Plot of the 2v2b spectrum with Q-value highlighted by a peak
+    """
     from utility.double_beta_spectrum import g
     fig, ax = plt.subplots(figsize = (8, 6))
     E = np.linspace(0, 3.100, 1000)
@@ -1217,8 +1118,8 @@ def bb_spectrum_with_Q_value_peak():
 
     E_peak = np.linspace(3.0, 3.100, 1000)
     peak = gaussian(E_peak, 3.034, 0.01) * np.max(spectrum) * 0.01
-    ax.plot(E_peak, peak, color = 'red')
-    ax.fill_between(E_peak, np.zeros_like(E_peak), peak, color = 'red', alpha = 0.2,label='0νββ')
+    #ax.plot(E_peak, peak, color = 'red')
+    #ax.fill_between(E_peak, np.zeros_like(E_peak), peak, color = 'red', alpha = 0.2,label='0νββ')
     ax.set_xticks([3.034], labels = [r'$Q_{\beta\beta}$'], fontsize = 20)
     ax.set_yticks([])
     ax.set_xlabel('Energy', fontsize = 20)
@@ -1231,11 +1132,12 @@ def bb_spectrum_with_Q_value_peak():
     ax.set_ylim(0,  np.max(spectrum))
     fig.legend(fontsize = 16)
     fig.set_tight_layout(True)
-    fig.savefig("/local/home/mp274748/Documents/these/figures/bb_spectrum_with_Q_value_peak.pdf", dpi = 300)
+    fig.savefig(f"{BASE}/outputs/plots/bb_spectrum_without_Q_value_peak.pdf", dpi = 300)
     plt.show()
 def denoise_NPS_comparaison():
-    channel_list = [3, 5, 9, 11, 13, 15, 17, 19]
-    channel_ID = [5, 9, 11, 10, 4, 2, 12, 3]
+    """
+    Plot of the comparaison between raw and denoised data (with the multichannel encoder denoiser).
+    """
     RMS_reductions = [0.96, 0.78, 0.43, 0.61, 0.3, 0.5, 0.88, 0.34]
     StdCuts = [0.0003, 0.0004, 0.0008, 0.0006, 0.0012, 0.0007, 0.00035, 0.0025]
 
@@ -1256,16 +1158,16 @@ def denoise_NPS_comparaison():
     for idx, channel_arg in enumerate(np.argsort(channel_ID)):
         ax = axes.flatten()[idx ]
 
-        channel = channel_list[channel_arg]
+        channel = channels[channel_arg]
         RMS_reduction = RMS_reductions[channel_arg]
 
         nps_raw = np.load(
-            f"/local/home/mp274748/PycharmProjects/Pileup_Analysis/outputs/NPS_study/"
+            f"{BASE}/outputs/NPS_study/"
             f"NPS_channel{channel}_win{window_size}_{meas_name}.npy"
         )[:1025]
 
         nps_denoised = np.load(
-            f"/local/home/mp274748/PycharmProjects/Pileup_Analysis/outputs/NPS_study/"
+            f"{BASE}/outputs/NPS_study/"
             f"NPS_channel{channel}_win{window_size}_{meas_name}_denoised.npy"
         )[:1025]
 
@@ -1299,15 +1201,17 @@ def denoise_NPS_comparaison():
     fig.legend(handles, labels, loc = "upper center", ncol = 2, fontsize = 20)
 
     plt.tight_layout(rect = [0, 0, 1, 0.95])
-    plt.savefig("/local/home/mp274748/Documents/these/figures/NPS_comparison_denoising.pdf", dpi = 300)
+    plt.savefig(f"{BASE}/outputs/plots/NPS_comparison_denoising.pdf", dpi = 300)
 
 
 def meanpulse_fig():
-    import numpy as np
-    import matplotlib.pyplot as plt
+    """
+    plot an pulse exemple with the decay and risetime highlighted
+    """
     from scipy.interpolate import interp1d
-
-    mp = np.load("../outputs/meanpulses_build/channel3_meanpulse_raw.npy")
+    rise_c = '#428cdcff'  # Color for rise region (blue)
+    decay_c = '#c3438a'  # Color for decay region (pink)
+    mp = np.load(f"{BASE}/outputs/meanpulses_build/channel3_meanpulse_raw.npy")
     mp = mp / np.max(mp)
 
     mp_interp = interp1d(np.arange(len(mp)), mp, kind='cubic')
@@ -1335,31 +1239,34 @@ def meanpulse_fig():
     fig, ax = plt.subplots(1, 1, figsize=(8, 6))
 
     # Pulse
-    ax.plot(t, mp, label='Pulse impulse response s(t)', color="black")
+    ax.plot(t, mp, label='Pulse impulse response s(t)', color="black",alpha=0.7)
+
+    ax.plot(t[i10:i90], mp[i10:i90], label='Pulse impulse response s(t)', color=rise_c)
+    ax.plot(t[i90_decay:i30_decay], mp[i90_decay:i30_decay], label='Pulse impulse response s(t)', color=decay_c)
 
     # --- Horizontal dashed lines ---
     ax.hlines(y10, xmin=t[0], xmax=t[np.argmax(mp > y10)],
-              linestyles='dashed', colors='blue', linewidth=1)
+              linestyles='dashed', colors=rise_c, linewidth=1)
 
 
     ax.hlines(y30, xmin=t[0], xmax=t[i30_decay],
-              linestyles='dashed', colors='red', linewidth=1)
+              linestyles='dashed', colors=decay_c, linewidth=1)
     ax.hlines(y90, xmin=t[0], xmax=t[i90_decay],
               linestyles='dashed', colors='black', linewidth=1)
     ax.text(-4, 0.91, '90% ', color = 'black', fontsize = 12)
-    ax.text(-4, 0.31, '30%', color = 'red', fontsize = 12)
-    ax.text(-4, 0.11, '10%', color = 'blue', fontsize = 12)
+    ax.text(-4, 0.31, '30%', color = decay_c, fontsize = 12)
+    ax.text(-4, 0.11, '10%', color = rise_c, fontsize = 12)
     ax.hlines(1, xmin=t[0], xmax=t[np.argmax(mp)],
-              linestyles='dashed', colors='black', linewidth=1)
-    ax.text(-4, 1.01, 'Amplitude', color = 'black', fontsize = 12)
+              linestyles='dashed', colors='red', linewidth=1)
+    ax.text(-4, 1.01, 'Amplitude', color = 'red', fontsize = 12)
 
     # --- Fill rise area (10% → 90%) ---
     ax.fill_between(t[i10:i90], mp[i10:i90],
-                    color='blue', alpha=0.3, label='Rise region')
+                    color=rise_c, alpha=0.3, label='Rise region')
 
     # --- Fill decay area (90% → 30%) ---
     ax.fill_between(t[i90_decay:i30_decay], mp[i90_decay:i30_decay],
-                    color='red', alpha=0.3, label='Decay region')
+                    color=decay_c, alpha=0.3, label='Decay region')
 
     # --- Label rise region ---
     t_rise_center = 0.5 * (t[i10] + t[i90])
@@ -1367,7 +1274,7 @@ def meanpulse_fig():
 
     ax.text(t_rise_center, y_rise_center,
             "Rise time",
-            color='blue', fontsize=13,
+            color=rise_c, fontsize=13,
             ha='center', va='center',
             alpha=0.9)
 
@@ -1377,9 +1284,9 @@ def meanpulse_fig():
 
     ax.text(t_decay_center, y_decay_center,
             "Decay time",
-            color='red', fontsize=13,
+            color=decay_c, fontsize=13,
             ha='center', va='center',
-            alpha=0.9)
+            alpha=1)
     # --- Formatting ---
     ax.set_xlim(-5, 25)
     ax.set_ylim(-0.1, 1.1)
@@ -1398,10 +1305,13 @@ def meanpulse_fig():
 
     fig.set_tight_layout(True)
 
-    fig.savefig("/local/home/mp274748/Documents/these/figures/meanpulse.pdf", dpi=300)
+    fig.savefig(f"{BASE}/outputs/plots/meanpulse.png", dpi=300)
     plt.show()
 
 def NPS_figure():
+    """
+    Plot a noise power spectrum exemple
+    """
     nps = np.load("../outputs/NPS_study/NPS_channel3_win4096_000813_20230628T161508.npy")
     freq = np.fft.rfftfreq(len(nps), d=1/10000)
     fig, ax = plt.subplots(figsize=(8, 6))
@@ -1421,10 +1331,26 @@ def NPS_figure():
     ax.spines['left'].set_linewidth(1.2)
     ax.spines['bottom'].set_linewidth(1.2)
     fig.set_tight_layout(True)
-    fig.savefig("/local/home/mp274748/Documents/these/figures/NPS.pdf", dpi=300)
+    fig.savefig(f"{BASE}/outputs/plots/NPS.pdf", dpi=300)
 
 
-def plot_mu_sigma_M(t_torch, mu_raw, sigma_raw, mu_corr, sigma_corr):
+def raw_vs_denoise_muY_M():
+    """
+    Plot the comparaison of the Y (PSD) and M (pileup misidentification rate) for the raw and denoised data.
+
+    The take away message here is that beside having a redused sigma the denoise data doesnt have a better
+    misidentification rate.
+    """
+    det = 5
+    channel = channels[channel_ID.index(det)]
+    acceptance = 0.9
+    mu_raw, sigma_raw = np.load(f"{BASE}/outputs/mu_sigmas/channel{channel}_mu_sigma_raw_test.npy")
+    mu_corr, sigma_corr = np.load(f"{BASE}/outputs/mu_sigmas/channel{channel}_mu_sigma_denoise_test.npy")
+    import torch
+    mu_raw, sigma_raw = torch.from_numpy(mu_raw), torch.from_numpy(sigma_raw)
+    mu_corr, sigma_corr = torch.from_numpy(mu_corr), torch.from_numpy(sigma_corr)
+    t_min, t_max, N_t = 0, 8e-4, 100
+    t_torch = np.linspace(t_min, t_max, N_t)
     from src.analysis import compute_A
     fig, ax1 = plt.subplots(figsize = (9, 7))
     ax2 = ax1.twinx()
@@ -1433,51 +1359,54 @@ def plot_mu_sigma_M(t_torch, mu_raw, sigma_raw, mu_corr, sigma_corr):
     mu_corr = mu_corr.real
     sigma_corr = sigma_corr.real
     t_torch = t_torch.real
+    color_raw = "#41639b"
+    color_corr = "#a64d79"
     # --- AXIS 1 (left) ---
-    l1, = ax1.plot(t_torch * 1e3, mu_raw[-1], color = "#0072B2", label = "Raw μ")
+    l1, = ax1.plot(t_torch * 1e3, mu_raw[-1], color = color_raw, label = "Raw μ")
     f1 = ax1.fill_between(
         t_torch * 1e3,
         (mu_raw[-1] - sigma_raw[-1]).cpu(),
         (mu_raw[-1] + sigma_raw[-1]).cpu(),
-        alpha = 0.3, color = "#0072B2", label = "Raw ±σ"
+        alpha = 0.3, color = color_raw, label = "Raw ±σ"
     )
 
-    l2, = ax1.plot(t_torch * 1e3, mu_corr[-1], color = "#D55E00", label = "Denoised μ")
+    l2, = ax1.plot(t_torch * 1e3, mu_corr[-1], color = color_corr, label = "Denoised μ")
     f2 = ax1.fill_between(
         t_torch * 1e3,
         (mu_corr[-1] - sigma_corr[-1]).cpu(),
         (mu_corr[-1] + sigma_corr[-1]).cpu(),
-        alpha = 0.3, color = "#D55E00", label = "Denoised ±σ"
+        alpha = 0.3, color = color_corr, label = "Denoised ±σ"
     )
 
-    ax1.set_xlabel("Δt [s]", fontsize = 14)
-    ax1.set_ylabel("Y", fontsize = 14)
+    ax1.set_xlabel("Δt [s]", fontsize = 16)
+    ax1.set_ylabel("Y", fontsize = 16,rotation=0,labelpad=20)
 
     # --- AXIS 2 (right) ---
     l3, = ax2.plot(
         t_torch * 1e3,
         compute_A(mu_raw, sigma_raw, N_sigma = 1.28)[-1],
-        color = "#0072B2", ls = "--", label = "Raw $\mathcal{M}$"
+        color = color_raw, ls = "--", label = "Raw $\mathcal{M}$"
     )
 
     l4, = ax2.plot(
         t_torch * 1e3,
         compute_A(mu_corr, sigma_corr, N_sigma = 1.28)[-1],
-        color = "#D55E00", ls = "-.", label = "Denoised $\mathcal{M}$"
+        color = color_corr, ls = "-.", label = "Denoised $\mathcal{M}$"
     )
 
-    ax2.set_ylabel(r"$\mathcal{M}$", fontsize = 14)
-    ax2.tick_params(axis = 'both', which = 'major', labelsize = 12)
-    ax1.tick_params(axis = 'both', which = 'major', labelsize = 12)
+    ax2.set_ylabel(r"$\mathcal{M}$", fontsize = 16,rotation=0,labelpad=20)
+    ax2.yaxis.set_label_coords(1.1, 0.551)
+    ax2.tick_params(axis = 'both', which = 'major', labelsize = 14)
+    ax1.tick_params(axis = 'both', which = 'major', labelsize = 14)
     # --- Separate legends ---
     # --- SHARED LEGEND ---
     handles = [l1, f1, l2, f2, l3, l4]
     labels = [h.get_label() for h in handles]
     ticks2 = [0, 0.2, 0.4, 0.6, 0.8, 1]
-    ticks1 = np.linspace(0.988, 1.0, len(ticks2))
+    ticks1 = np.linspace(0.99, 1.0, len(ticks2))
     ax1.set_yticks(ticks1)
     ax2.set_yticks(ticks2)
-    ax1.set_ylim(0.986, 1.002)
+    ax1.set_ylim(0.989, 1.001)
     # map limits to ax2
     t1_min, t1_max = ticks1[0], ticks1[-1]
     t2_min, t2_max = ticks2[0], ticks2[-1]
@@ -1487,10 +1416,431 @@ def plot_mu_sigma_M(t_torch, mu_raw, sigma_raw, mu_corr, sigma_corr):
 
     ax2.set_ylim(y2_min, y2_max)
     ax1.grid(linestyle = '--', linewidth = 0.5)
-    ax1.legend(handles, labels, loc = "upper right", fontsize = 12)
-    fig.savefig("/local/home/mp274748/Documents/these/figures/mu_sigma_M_raw_denoise.pdf", dpi = 300)
+    ax1.legend(handles, labels, loc = "upper right", fontsize = 16)
+    fig.savefig(f"{BASE}/outputs/plots/mu_sigma_M_raw_denoise.png", dpi = 300)
+    plt.show()
+def diff_acceptance_plot():
+    """
+    Plot of the difference in BI resulting from a training at specific acceptance vs a fixe training at 0.9 acceptance.
+    The takeaway message here is that the acceptance has little impact at the training level.
+    """
+    acceptances = [0.7, 0.8, 0.84, 0.87, 0.9, 0.92, 0.93, 0.94, 0.95, 0.96, 0.99]
+    data_acc = pd.read_csv(f"{BASE}/outputs/BI_acceptance_study.csv")
+    window_size = 4096
+    meas_name = "000813_20230628T161508"
+    BIs_channels = []
+    plt.style.use("default")
+    plt.rcParams.update({
+        "font.size": 12,
+        "axes.labelsize": 13,
+        "axes.titlesize": 14,
+        "legend.fontsize": 10,
+        "lines.linewidth": 2,
+    })
+
+    fig, (ax, ax_diff) = plt.subplots(
+        2,
+        figsize = (11, 7),
+        sharex = True,
+        gridspec_kw = {"height_ratios": [3.5, 1], "hspace": 0.05}
+    )
+
+    for idx, channel_arg in enumerate(np.argsort(channel_ID)):
+        channel = channels[channel_arg]
+        BIs = []
+
+        PSD_pileup, PSD_single = np.load(
+            f"{BASE}/outputs/PSDs/PSD_channel{channel}_win{window_size}_{meas_name}_acc90.npy"
+        )
+
+        for acceptance in acceptances:
+            cut = np.percentile(PSD_single, (1 - acceptance) * 100)
+            rp = np.sum(PSD_pileup < cut) / len(PSD_pileup)
+            BI = fn.K * (1.0 - rp)
+            BIs.append(BI)
+
+        BIs = np.array(BIs)
+        BI_ref = data_acc.loc[data_acc["channel"] == channel, "BI"].values
+
+        color = colors[idx % len(colors)]
+
+        # Main curve
+        ax.plot(
+            acceptances,
+            BIs * 1e5,
+            marker = "o",
+            markersize = 5,
+            color = color,
+            label = f"Channel ID {channel_ID[channel_arg]}"
+        )
+
+        # Reference points
+        ax.scatter(
+            data_acc.loc[data_acc["channel"] == channel, "acceptance"],
+            BI_ref * 1e5,
+            marker = "x",
+            s = 60,
+            linewidth = 2,
+            color = color,
+            alpha = 0.8
+        )
+
+        # Residuals
+        diff = (BIs - BI_ref) * 1e5
+        ax_diff.plot(
+            acceptances,
+            diff,
+            marker = "o",
+            markersize = 4,
+            color = color,
+            alpha = 0.85
+        )
+    # Dummy handles for legend explaining marker meaning
+    ax.plot([], [], marker = 'x', ls = '', markersize = 8,
+            label = 'BI from specific acceptance study', color = 'k')
+
+    ax.plot([], [], marker = 'o', ls = '', markersize = 6,
+            label = 'BI from 0.9 acceptance study', color = 'k')
+    # Styling main panel
+    ax.set_ylabel(r"BI [$10^{-5}$ cts / keV / kg / yr]")
+    ax.set_title("Background Index vs Single-Pulse Acceptance")
+    ax.grid(True, alpha = 0.3)
+    #ax.legend(ncol = 4, frameon = False, loc = "upper center")
+    ax.legend(ncol = 2, frameon = False, loc = 'upper center')
+    # Residual panel
+    ax_diff.axhline(0, linestyle = "--", linewidth = 1)
+    ax_diff.grid(True, alpha = 0.3)
+    ax_diff.set_ylabel("ΔBI")
+    ax_diff.set_xlabel("Single pulse acceptance")
+
+    plt.tight_layout()
+    plt.show()
+def ROC_curve():
+    """
+    Plot of the Receiver Operating Characteristic (ROC), which show the evolution of the True Positive Rate (pileup
+    rejected) with the False Positive Rate (single pulse rejected).
+    """
+    window_size = 4096
+    meas_name = "000813_20230628T161508"
+
+    plt.style.use("default")
+    plt.rcParams.update({
+        "font.size": 12,
+        "axes.labelsize": 13,
+        "axes.titlesize": 14,
+        "legend.fontsize": 10,
+        "lines.linewidth": 2,
+    })
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    all_tpr = []
+    all_fpr = []
+    for idx, channel_arg in enumerate(np.argsort(channel_ID)):
+        channel = channels[channel_arg]
+
+        PSD_pileup, PSD_single = np.load(
+            f"{BASE}/outputs/PSDs/"
+            f"PSD_channel{channel}_win{window_size}_{meas_name}_acc90.npy"
+        )
+
+        # Reduce thresholds for speed
+        thresholds = np.linspace(
+            min(PSD_pileup.min(), PSD_single.min()),
+            max(PSD_pileup.max(), PSD_single.max()),
+            500
+        )
+
+        tpr = []
+        fpr = []
+
+        for cut in thresholds:
+            tp = np.mean(PSD_pileup < cut)
+            fp = np.mean(PSD_single < cut)
+
+            tpr.append(tp)
+            fpr.append(fp)
+
+        ax.plot(
+            fpr,
+            tpr,
+            color=colors[idx],
+        )
+        ax.plot(
+            [],
+            [],
+            color = colors[idx],
+            marker = "s",
+            markersize = 10,
+            ls="",
+            label = f"Det. {channel_ID[channel_arg]}"
+        )
+        all_tpr.append(tpr)
+        all_fpr.append(fpr)
+    all_tpr = np.array(all_tpr)
+    all_fpr = np.array(all_fpr)
+
+    median_tpr = np.median(all_tpr, axis = 0)
+    median_fpr = np.median(all_fpr, axis = 0)
+
+    ax.plot(
+        median_fpr,
+        median_tpr,
+        color = "black",
+        lw = 2,
+        label = "Median",
+        ls="--"
+    )
+    # Random classifier line (ONLY ONCE)
+    ax.plot([0, 1], [0, 1], '-.', color='gray', label='Random')
+    ax.plot()
+    ax.set_xlabel("False Positive Rate (single pulse rejected)", fontsize=16)
+    ax.set_ylabel("True Positive Rate (pileup rejected)", fontsize=16)
+    #ax.set_title("ROC Curve")
+
+    def forward(y):
+        return fn.K * (1 - y) * 1e5
+
+    def inverse(y_sec):
+        return 1 - y_sec / fn.K * 1e-5
+
+    secax = ax.secondary_yaxis('right', functions = (forward, inverse))
+    secax.set_ylabel("Background Index [1e-5 cts/keV/kg/year] ", fontsize=16)
+    # Reference lines
+    y_goal = inverse(5.0)
+    x_goal = 1 - 0.9
+
+    ax.axhline(y_goal, color = 'gray', linestyle = '--', alpha = 0.6)
+    ax.axvline(x_goal, color = 'gray', linestyle = '--', alpha = 0.6)
+
+    # Labels along the lines
+    ax.text(
+        0.55, y_goal-0.005 ,
+        "CUPID TDR\n"+r"BI = $5 \times 10^{-5}$",
+        color = "gray",
+        ha = "center",
+        va = "center",
+        fontsize = 12,
+        linespacing=1.5
+    )
+
+    ax.text(
+        x_goal+0.001, 0.4,
+        "CUPID TDR\n 90% acceptance",
+        color = "gray",
+        rotation = 90,
+        ha = "center",
+        va = "center",
+        fontsize = 12,
+        linespacing=2
+    )
+    ax.tick_params(axis='both', which='major', labelsize=14)
+    secax.tick_params(axis='both', which='major', labelsize=14)
+    ax.grid(alpha=0.3)
+    ax.legend(ncol=2,fontsize=14)
+    plt.tight_layout()
+    plt.savefig(f"{BASE}/outputs/plots/ROC_curve.pdf", dpi=300)
+    plt.show()
+
+def scaling_factor():
+    """
+    Plot of the BI with the scaling factor applyed to the SNR of the data.
+    We show also scaling factor lines corresponding to different scenario presented in M.Pageot thesis.
+    """
+    df1 = pd.read_csv(f"{BASE}/outputs/Systematics/BI_scaling_factor.csv")
+    df2 = pd.read_csv(f"{BASE}/outputs/Systematics/BI_scaling_factor_bis.csv")
+    df = pd.concat([df1, df2], ignore_index=True)
+    plt.style.use("default")
+    plt.rcParams.update({
+        "font.size": 12,
+        "axes.labelsize": 13,
+        "axes.titlesize": 14,
+        "legend.fontsize": 10,
+        "lines.linewidth": 2,
+    })
+
+    fig, ax = plt.subplots(figsize = (8, 6))
+    median_BI = df.groupby("scaling_factor")["BI"].median() * 1e5
+
+
+    # ---- channel-wise fits ----
+    for i, channel_arg in enumerate(np.argsort(channel_ID)):
+        channel = channels[channel_arg]
+        df_sub = df[df["channel"] == channel]
+
+        x = df_sub["scaling_factor"].values
+        x_log = np.log(x)
+        y = df_sub["BI"].values * 1e5
+        y_log = np.log(y)
+
+        coeff = np.polyfit(x_log, y_log, 1)
+        b = coeff[0]
+        a = np.exp(coeff[1])
+
+        print(f"Channel {channel}: a={a:.3e}, b={b:.3f}")
+
+        color = colors[i % len(colors)]
+        y_err = df_sub["BI_uncertainty"].values * 1e5
+
+        ax.errorbar(x, y, yerr = y_err, color = color, alpha = 0.7,
+                    label = f"Det {channel_ID[channel_arg]} (b={b:.2f})",
+                    fmt = 'o', capsize = 3, markersize = 5, ls = "")
+
+        xfit = np.linspace(0.6, x.max(), 200)
+        ax.plot(xfit, a*xfit**b, color = color)
+
+    ax.plot(
+        median_BI.index,
+        median_BI.values,
+        marker = "x",
+        linestyle = "--",
+        color = "black",
+        linewidth = 2
+    )
+    from scipy.interpolate import interp1d
+    f_inter = interp1d(median_BI.index, median_BI.values, kind = "linear", fill_value = "extrapolate")
+    # ---- scenario lines ----
+    scenarios = [
+        ("(a)+(c)", 0.625),
+        ("(a)+(e)", 1.06),
+        ("(b)+(d)", 1.00),
+        ("(b)+(e)", 1.25),
+        ("(b)+(e)+(f)", 1.56),
+        ("(b)+(e)+(f)+(g)", 1.96)
+    ]
+
+
+    for label, x in scenarios:
+        # print(f"Scenario {label}: BI = {f_inter(x):.2f} x 10^-5")
+        print(f_inter(x),",")
+        ax.axvline(
+            x,
+            color = "gray",
+            linestyle = ":",
+            linewidth = 1.9,
+            alpha = 0.7,
+        )
+        ax.text(
+            x+0.011,
+            11.1,  # slightly above lower y-limit
+            label,
+            rotation = 90,
+            va = "top",
+            ha = "left",
+            fontsize = 12,
+            color = "k",
+        )
+    for i in range(5):
+        ax.plot([], [], ls = "", label = " ")
+    ax.plot(
+        [],
+        [],
+        marker = "x",
+        linestyle = "--",
+        color = "black",
+        linewidth = 2,
+        label = "Median BI"
+    )
+
+    # ---- target line ----
+    ax.axhline(
+        5,
+        color = "gray",
+        linestyle = "--",
+        linewidth = 1.5,
+        label = r"Target BI = $5\times10^{-5}$"
+    )
+    ax.plot([], [], c = "k", label = "Fit: $BI = a \cdot (scaling\_factor)^b$")
+
+    # ---- formatting ----
+    ax.set_xlabel("Scaling Factor")
+    ax.set_ylabel(r"BI [$10^{-5}$ cts / keV / kg / yr]")
+    ax.grid(alpha = 0.3)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xticks([0.6,0.7,0.8, 0.9, 1, 1.2, 1.4, 1.7, 2], labels = [0.6,0.7,0.8, 0.9, 1, 1.2, 1.4, 1.7, 2])
+    ax.set_yticks([4, 5, 6, 7, 8, 9,10], labels = [4, 5, 6, 7, 8, 9,10])
+    ax.set_ylim(3.3, 11.15)
+
+    plt.tight_layout()
+    artist,labels = ax.get_legend_handles_labels()
+    leg = plt.legend(artist[8:]+artist[1:8], labels[8:]+labels[1:8],
+        ncol = 2, fontsize = 12, framealpha = 0, loc = "lower left")
+    for txt in leg.get_texts():
+        if txt.get_text() != " ":
+
+            txt.set_bbox(dict(
+                facecolor = "white",
+                edgecolor = "none",
+                alpha =1,
+                pad = 4
+            ))
+    plt.savefig(f"{BASE}/outputs/plots/scaling_factor.pdf", dpi = 300)
+    plt.show()
+
+
+def BI_vs_bias_current_RUN121():
+    """
+    Plot of the BI vs working point (ie bias_current applied to the NTD) for Ulysse RUN121.
+    """
+    df = pd.read_csv(f"{BASE}/outputs/Systematics/BI_WP_RUN121_Ulysse.csv")
+    df_info = pd.read_csv("/media/mp274748/Transcend2/data/Ulysse/RUN121/rms_amp_SNR_RUN121_bis.csv")
+
+    fig, axs = plt.subplots(1,3,figsize = (14, 5), sharey = True, gridspec_kw = {"width_ratios": [1, 1, 1], "wspace": 0.})
+
+    biais = np.array([0.5, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 29])
+    color_SNR = "r"
+    color_rt= "b"
+    color_J = "#6620a6"
+    names = ["edgeSi2", "edgeSi1", "bingoSi3"]
+    for idx, channel in enumerate([5,6,7]):
+
+        ax1 = axs[idx]
+        ax_SNR = ax1.twinx()
+        ax_rt = ax1.twinx()
+        ax_SNR.set_ylim(0, 0.2)
+        ax_rt.set_ylim(0.2, 1.2)
+        df_sub = df.loc[df["channel"] == channel]
+        df_info_sub = df_info.loc[df_info["channel"] == channel]
+        ax_SNR.plot(biais[df_info_sub["meas"].astype(int) - 1], 1 / df_info_sub["SNR"], c = color_SNR, marker = '^',
+                 alpha = 0.6, label = f'1/SNR')
+        ax1.plot([], [], c = color_SNR, marker = '^', alpha = 0.6, label = f'1/SNR')
+        ax_rt.plot(biais[df_info_sub["meas"].astype(int) - 1], df_info_sub["rt"] * 1000, c = color_rt, marker = 'x',
+                 alpha = 0.6,label = f'Rise time (ms)' )
+        ax1.plot([], [], c = color_rt, marker = 'x',
+                 alpha = 0.6,label = f'Rise time (ms)' )
+        l, = ax1.plot(biais[df_sub["measurement"].astype(int) - 1], df_sub["J_value"] * 100, marker = 'o', lw = 3,
+                      c = color_J, label = r'$\langle \mathcal{M} \rangle$')
+        ax1.set_xlabel("biais [nA]", fontsize = 14)
+        ax1.set_xticks(biais.astype(int))
+        ax1.legend()
+        ax1.set_ylim(0, 20)
+        ax1.set_yticks(np.arange(0, 21, 2), labels = [f"{x:.0f}" for x in np.arange(0, 21, 2)], fontsize = 12)
+        ax1.set_xticks(np.arange(0,31,4), labels = [f"{x:.0f}" for x in np.arange(0,31,4)], fontsize = 12)
+        ax_SNR.set_yticks([])
+        ax_rt.set_yticks([])
+        ax1.grid()
+        ax1.set_title(names[idx], fontsize = 14)
+    ax_rt.spines["right"].set_position(("axes", 1.3))
+    ax_rt.tick_params(axis = 'y', colors = color_rt, labelsize = 14)
+    ax_rt.spines['right'].set_color(color_rt)
+    ax_SNR.set_ylabel("1/SNR", fontsize = 14, color = color_SNR)
+    ax_SNR.tick_params(axis = 'y', colors = color_SNR, labelsize = 14)
+    ax_SNR.spines['right'].set_color(color_SNR)
+    ax_rt.set_ylabel("Rise time [ms]", fontsize = 14, color = color_rt)
+    axs[0].set_ylabel(r"Residual unidentified pile-up rate $\langle \mathcal{M} \rangle$ [%]", fontsize = 14,color=color_J)
+    axs[0].tick_params(axis = 'y', labelsize = 14,colors=color_J)
+    axs[0].spines['left'].set_color(color_J)
+    ax_SNR.set_yticks(np.arange(0, 0.21, 0.02), labels = [f"{x:.2f}" for x in np.arange(0, 0.21, 0.02)], fontsize = 12)
+    ax_rt.set_yticks(np.arange(0.2, 1.21, 0.1), labels = [f"{x:.1f}" for x in np.arange(0.2, 1.21, 0.1)], fontsize = 12)
+    fig.subplots_adjust(right = 0.85)
+    fig.subplots_adjust(left = 0.08)
+    # fig.tight_layout()
+    fig.savefig(f"{BASE}/outputs/plots/BI_vs_bias_current_RUN121.pdf", dpi = 300)
+    plt.show()
+
 
 
 if __name__ == "__main__":
-    bb_spectrum_with_Q_value_peak()
-    plt.show()
+    pass
+    # diff_acceptance_plot()

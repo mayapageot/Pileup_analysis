@@ -8,6 +8,7 @@ import utility.functions as fn
 from src.dataset import batch_iterator
 import math
 from utility.functions import cubic_interp1d_scipy, align_waveforms, gaussian_kde_torch
+from utility.double_beta_spectrum import pdf_ratio2b
 norm = Normal(0, 1)
 
 
@@ -262,10 +263,10 @@ def compute_A(muY, sigmaY, N_sigma=1.28):
     return 1 - norm.cdf((1-muY-N_sigma*sigmaY[0, 0]) / sigmaY)
 
 
-def compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distribution,
+def compute_M(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distribution,
               pulse_center_ratio=0.5, N_sigma=1.28, use_interp=False ,full_output=False):
     """
-    Computes the J metric for the given inputs.
+    Computes the M metric for the given inputs.
 
     Args:
         f1 (torch.Tensor): First filter tensor.
@@ -281,9 +282,9 @@ def compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distri
         full_output (bool, optional): Whether to return full output. Defaults to False.
 
     Returns:
-            torch.Tensor: Computed J metric value if `full_output=False`.
+            torch.Tensor: Computed M metric value if `full_output=False`.
             tuple: If `full_output=True`, returns a tuple containing:
-                - torch.Tensor: Mean J metric value.
+                - torch.Tensor: Mean M metric value.
                 - torch.Tensor: Acceptance values.
                 - torch.Tensor: Mean Y values.
                 - torch.Tensor: Sigma Y values.
@@ -300,7 +301,7 @@ def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_
                     activation_fct=None,
                      pulse_center_ratio=0.5, f1_init=None, f2_init=None, verbose = True, use_interp = False):
     """
-    Optimizes two filters (f1 and f2) to maximize the J metric using gradient-based optimization.
+    Optimizes two filters (f1 and f2) to maximize the M metric using gradient-based optimization.
 
     Args:
         S (torch.Tensor): Input signal tensor.
@@ -311,7 +312,7 @@ def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_
         nps (torch.Tensor): Baseline spectrum tensor.
         signal_amp (float): Signal amplitude.
         ratio_distribution (torch.Tensor): Ratio distribution tensor.
-        N_sigma (float, optional): Sigma threshold for the J metric. Defaults to 1.28.
+        N_sigma (float, optional): Sigma threshold for the M metric. Defaults to 1.28.
         n_trials (int, optional): Number of optimization steps. Defaults to 1000.
         pulse_center_ratio (float, optional): Pulse center ratio. Defaults to 0.5.
         f1_init (torch.Tensor or None, optional): Initial filter f1. Defaults to None.
@@ -322,7 +323,7 @@ def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_
         tuple:
             - f1 (numpy.ndarray): Optimized first filter.
             - f2 (numpy.ndarray): Optimized second filter.
-            - J_values (list): List of J metric values during optimization.
+            - M_values (list): List of M metric values during optimization.
     """
     # Precompute constants required for optimization
     S_H_delayed, S_H, S2_over_nps = precompute_constants(S, H_unit, w, t, nps)
@@ -345,12 +346,12 @@ def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_
         T_max = n_trials,
         eta_min = 1e-5
     )
-    J_values = []  # To store J metric values during optimization
+    M_values = []  # To store M metric values during optimization
     f1 = activation_fct(f1_param)
     f2 = activation_fct(f2_param)
     f1 = torch.cat([f1, f1[1:-1].flip(0)])
     f2 = torch.cat([f2, f2[1:-1].flip(0)])
-    J = torch.nan
+    M = torch.nan
     for step in range(n_trials):
         optimizer.zero_grad()  # Reset gradients
         # Enforce positivity of the filters
@@ -363,24 +364,24 @@ def optimize_filters(S, H_unit, w, t, r, nps, signal_amp, ratio_distribution, N_
         norm2 = torch.mean(torch.abs(f2 * H_unit * S))
         f1 = f1 / norm1
         f2 = f2 / norm2
-        # Compute the J metric
-        J = compute_J(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distribution, N_sigma = N_sigma,
+        # Compute the M metric
+        M = compute_M(f1, f2, S_H_delayed, r, S_H, S2_over_nps, signal_amp, ratio_distribution, N_sigma = N_sigma,
                       pulse_center_ratio=pulse_center_ratio, use_interp=use_interp)
-        J_values.append(J.item())  # Store the current J value
+        M_values.append(M.item())  # Store the current M value
 
         # Backpropagation and update filter parameters
-        J.backward()
+        M.backward()
 
         optimizer.step()
         scheduler.step()
         # Uncomment the following lines to print progress every 100 steps
         if step % 10 == 0 and verbose:
-            print(f"Step {step}: J = {J.item():.6f}")
-    print(f"Final: J = {J.item():.6f}")
+            print(f"Step {step}: M = {M.item():.6f}")
+    print(f"Final: M = {M.item():.6f}")
     # Convert optimized filters to numpy arrays
     f1 = f1.detach()
     f2 = f2.detach()
-    return f1, f2, J_values
+    return f1, f2, M_values
 
 
 def get_PSD(dataset, H_unit, f1, f2, batch_size=128, window_fct=np.ones):
@@ -1174,3 +1175,45 @@ def build_mean_pulse_filteralignement_from_raw(dataset, rms_thr, nps, pulse_cent
                                       amplitude_bounds=amplitude_bounds,return_amp=return_amp,
                                              return_pulses=return_pulses,
                                       batch_size=batch_size, device=device, use_loader=use_loader)
+
+def compute_mu_sigma_from_base(meanpulse, nps_raw, signal_amp,
+                               f1_raw, f2_raw,
+                               t_min=0, t_max=8e-4, N_t=100,
+                               r_min=0, r_max=0.5, N_r=100):
+    """
+        Compute the mean and standard deviation of the Y parameter for the range of dt and r determined.
+
+        Args:
+            meanpulse (numpy.ndarray): The mean pulse signal in the time domain.
+            nps (numpy.ndarray): The noise power spectrum.
+            signal_amp (float): The amplitude of the Q_value in the channel.
+            f1_raw (numpy.ndarray): The weighting function in numerator of the Y parameter.
+            f2_raw (numpy.ndarray): The weighting function in denominator for the Y parameter.
+            t_min,t_max,N_t (float, optional): Range of the dt parameter.
+            r_min,r_max,N_r (float, optional): Range of the r parameter.
+
+        Returns:
+            tuple:
+                - mu (torch.Tensor): means of the Y parameter for each given dt and r.
+                - sigma (torch.Tensor): standard deviation of the Y parameter for each given dt and r.
+
+    """
+
+    f1_raw, f2_raw = torch.tensor(f1_raw), torch.tensor(f2_raw)
+    window_size = len(nps_raw)
+    meanpulse_bis = meanpulse[np.argmax(meanpulse) - window_size // 2: np.argmax(meanpulse) + window_size // 2]
+
+    S, w, H_unit_raw = compute_H(meanpulse_bis, nps_raw, np.hanning)
+    nps_raw = torch.tensor(nps_raw)
+    f1_raw = f1_raw / torch.mean(torch.abs(f1_raw * H_unit_raw * S)).real
+    f2_raw = f2_raw / torch.mean(torch.abs(f2_raw * H_unit_raw * S)).real
+
+    ratio_distribution = pdf_ratio2b(np.linspace(r_min, r_max, N_r))
+    ratio_distribution /= np.mean(ratio_distribution)
+
+    t_torch = torch.linspace(t_min, t_max, N_t, dtype = torch.cfloat, device = device)
+    r_torch = torch.linspace(r_min, r_max, N_r, dtype = torch.cfloat, device = device)
+    S_H_delayed_raw, S_H_raw, S2_over_nps_raw = precompute_constants(S, H_unit_raw, w, t_torch, nps_raw)
+    mu_raw, sigma_raw = compute_mu_sigma(f1_raw, f2_raw, S_H_delayed_raw, r_torch, S_H_raw, S2_over_nps_raw,
+                                            signal_amp, pulse_center_ratio = 0.5, use_interp = True)
+    return mu_raw, sigma_raw

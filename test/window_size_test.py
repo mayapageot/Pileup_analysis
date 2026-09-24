@@ -26,7 +26,7 @@ channel_data = []
 BI_uncertainties, rp_uncertainties = [], []
 BIs = []
 rps = []
-Js = []
+Ms = []
 acceptance = 0.9
 n_deriv = 0
 meas_name = "000813_20230628T161508"
@@ -110,7 +110,7 @@ for channel, StdCut in zip(channels, StdCuts):
         nps_torch = torch.tensor(nps_bis, dtype=torch.cfloat, device=device)
         signal_amp_torch = torch.tensor(signal_amp, dtype=torch.float32, device=device)
 
-        # f1_opt, f2_opt, J_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
+        # f1_opt, f2_opt, M_values = an.optimize_filters(S_torch, H_unit_torch, w_torch, t_torch, r_torch, nps_torch,
         #                                                signal_amp_torch, ratio_distribution_torch, N_sigma=N_sigma,
         #                                                n_trials=500, verbose=False)
         # directory_path = f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/window_size/"
@@ -119,8 +119,8 @@ for channel, StdCut in zip(channels, StdCuts):
         #         f"functions_eff{int(acceptance * 100):d}_window_size_{int(window_size):d}_4Pole_Bessel_fit_data",
         #         np.array([f1_opt, f2_opt]))
         # np.save(directory_path +
-        #         f"J_{int(acceptance * 100):d}_window_size_{int(window_size):d}_4Pole_Bessel_fit_data",
-        #         np.array(J_values))
+        #         f"M_{int(acceptance * 100):d}_window_size_{int(window_size):d}_4Pole_Bessel_fit_data",
+        #         np.array(M_values))
         f1_opt, f2_opt = np.load(
             f"{BASE}/outputs/Pileup_filter_functions/channel_{channel}/window_size/"
             f"functions_eff{int(acceptance * 100):d}_window_size_{int(window_size):d}_4Pole_Bessel_fit_data.npy"
@@ -135,7 +135,7 @@ for channel, StdCut in zip(channels, StdCuts):
         f1_t /= torch.mean(f1_t * S_H).real
         f2_t /= torch.mean(f2_t * S_H).real
 
-        J = an.compute_J(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
+        M = an.compute_M(f1_t, f2_t, S_H_delayed, r_torch, S_H, S2_over_nps, signal_amp_torch, ratio_distribution_torch,
                          N_sigma=N_sigma)
 
         # BI, rp, sigma_rp, sigma_BI = an.compute_BI_torch(
@@ -155,22 +155,22 @@ for channel, StdCut in zip(channels, StdCuts):
         # BI_uncertainties.append(float(sigma_BI))
         # rps.append(float(rp))
         # rp_uncertainties.append(float(sigma_rp))
-        Js.append(float(J))
+        Ms.append(float(M))
         channel_data.append(channel)
         window_size_data.append(window_size)
 # BIs = np.array(BIs)
 # BI_uncertainties = np.array(BI_uncertainties)
 # rps = np.array(rps)
 # rp_uncertainties = np.array(rp_uncertainties)
-Js = np.array(Js)
+Ms = np.array(Ms)
 channel_data = np.array(channel_data)
 window_size_data = np.array(window_size_data)
 
-# data = np.column_stack([channel_data, window_size_data, BIs,BI_uncertainties, 1 - rps,rp_uncertainties, Js])
-# header = "channel,window_size,BI,BI_err,1-rp,rp_err,J"
+# data = np.column_stack([channel_data, window_size_data, BIs,BI_uncertainties, 1 - rps,rp_uncertainties, Ms])
+# header = "channel,window_size,BI,BI_err,1-rp,rp_err,M"
 
-data = np.column_stack([channel_data, window_size_data,Js])
-header = "channel,window_size,J"
+data = np.column_stack([channel_data, window_size_data,Ms])
+header = "channel,window_size,M"
 
 np.savetxt(
     f"{BASE}/outputs/Systematics/BI_window_size_4Pole_Bessel_fit_data_bis.csv",
