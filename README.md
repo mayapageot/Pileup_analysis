@@ -17,11 +17,14 @@ The work is presented in the following paper: https://arxiv.org/abs/2606.17948
 
 A good starting point to understand the software is to go through the tutorial jupyter notebook in the folder
 "test" which will guide you through the main steps of the analysis and show you how to use the software.
-It is possible to run it without any additionnal data until the "# Compute the Background Index using injected pulses"
+It is possible to run it without any additional data until the "# Compute the Background Index using injected pulses"
 step, which requires the user to provide the noise data (file_path) and the montecarto generated amplitude and time 
 delay (path_pos). This data is available upon request to the author of the paper.
+Creating a new dataset requires to select a run binary file of the analysed detector and modify the pos file so that
+the position corresponds to noise traces in the binary file.
 
-Installation
+
+## Installation
 The software is based on python 3.8.20 and has been tested using the packages versions listed in requirements.txt but 
 the version used are not a strict requirements. 
 Pytorch being a bit capricious, it is recommended to use conda to install the packages in a virtual environment:
@@ -30,12 +33,18 @@ $ conda activate pileup_analysis
 $ conda install jupyter matplotlib pandas scipy 
 If you want to use the CPU only version of pytorch, you can install it with the following command:
 $ conda install pytorch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 cpuonly -c pytorch
-But if you have a GPU and want to use it, you can install the GPU version of pytorch with the following command:
-$ conda install pytorch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 cudatoolkit=11.8 -c pytorch
-This operation might be tricky but increase a lot the speed of the computation as the optimization uses gradient\
+But if you have a GPU and want to use it, you can install the GPU version of pytorch following the instructions on the 
+official website: https://pytorch.org/get-started/locally/
+An environment compatible with GPU computing are usually available on most computing clusters (on CEA computing cluster,
+for example, you can use the "gpu" environment with the command "module load 
+/feynman/work/projets/cupid/scratch/mpageot/python_project/ML_denoising_env"
+This operation might be tricky but increase a lot the speed of the computation as the optimization uses gradient 
 descent and other GPU optimized operations. If you have a GPU, it is highly recommended to use it.
 
-Structure of the software
+Then you create a .env file in the root directory of the software following the example provided in the .env.example 
+file. The .env file is used to set the path to the data used for injection (ie raw binary file)
+
+## Structure of the software
 src: 
     analysis.py: contains the main code to perform the analysis and compute the Background Index.
     dataset.py: contains the code to generate the dataset used for the analysis, reading binnary files and caching for
