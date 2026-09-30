@@ -15,12 +15,15 @@ and injecting selected pulses given previously generated amplitudes and delays.
 
 The work is presented in the following paper: https://arxiv.org/abs/2606.17948
 
+## Tutorial
 A good starting point to understand the software is to go through the `tutorial.ipynb` jupyter notebook in the folder
 `test` which will guide you through the main steps of the analysis and show you how to use the software.
 
 It is possible to run it without any additional data until the `# Compute the Background Index using injected pulses`
 step, which requires the user to provide the noise data (`file_path`) and the montecarto generated amplitude and time 
-delay (`path_pos`). This data is available upon request to the author of the paper.
+delay (`path_pos`). This data is available upon request to the author of the paper or on feynman 
+(setting DATA_PATH=/feynman/work/projets/cupid/data/LSM/RUN9_pulse_injected in the `.env` file) and cupid_login 
+(setting DATA_PATH = /data2/LSC/DATA/RUN9 in the `.env` file)
 
 Creating a new dataset requires to select a run binary file of the analysed detector and modify the pos file so that
 the position corresponds to noise traces in the binary file.
